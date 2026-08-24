@@ -4,8 +4,8 @@
   "description": "Gym Retention App - QR attendance, churn detection, renewal system, and add-on marketplace",
   "main": "backend/server.js",
   "scripts": {
-    "install:all": "npm install --prefix backend && npm install --prefix frontend/web",
-    "build:frontend": "cd frontend/web && npm install && npm run build",
+    "install:all": "npm ci --ignore-scripts --prefix backend && npm ci --ignore-scripts --prefix frontend/web",
+    "build:frontend": "cd frontend/web && npm run build",
     "build": "npm run install:all && npm run build:frontend",
     "start": "cd backend && node server.js",
     "dev:backend": "cd backend && node server.js",
@@ -22,6 +22,9 @@
     "qr-code",
     "renewals"
   ],
+  "engines": {
+    "node": ">=22.12.0 <25.0.0"
+  },
   "author": "RRWalia",
   "license": "MIT"
 }

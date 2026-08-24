@@ -40,11 +40,15 @@ Every `/api/*` business route requires `Authorization: Bearer <token>`. Only `/a
 
 ### Local development
 
+Node.js **22.12.0 or newer** is required. Vite 8 (`^20.19.0 || >=22.12.0`) and `better-sqlite3` 13 (`>=22`) both refuse older runtimes. The pinned version lives in `.node-version` (read by Render and by `nodenv`/`fnm`/`nvm`) and the accepted range in `package.json` → `engines`.
+
 ```bash
 npm run install:all
 npm run dev:backend       # API + SQLite on port 5001
 npm run dev:frontend      # Vite UI on port 3000
 ```
+
+`install:all` runs `npm ci --ignore-scripts`. Both native modules (`better-sqlite3`, `bcrypt`) ship prebuilt binaries for glibc *and* musl, so no C toolchain (`python3`/`make`/`g++`) is needed in the build image — keep `--ignore-scripts` in place, otherwise npm synthesises a `node-gyp rebuild` step for `better-sqlite3` and the deploy fails where a compiler is absent.
 
 On a new **non-production** database, these demo accounts are created:
 
