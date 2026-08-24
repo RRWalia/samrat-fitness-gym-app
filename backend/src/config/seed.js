@@ -15,16 +15,16 @@ function seedAuthUsers() {
 
   const candidates = [
     {
-      username: process.env.INITIAL_OWNER_USERNAME || 'owner',
+      username: process.env.INITIAL_OWNER_USERNAME || 'ashish',
       password: ownerPassword,
-      fullName: process.env.INITIAL_OWNER_NAME || 'Samrat Gym Owner',
+      fullName: process.env.INITIAL_OWNER_NAME || 'Ashish',
       role: 'owner',
       trainerId: null
     },
     {
-      username: process.env.INITIAL_MANAGER_USERNAME || 'manager',
+      username: process.env.INITIAL_MANAGER_USERNAME || 'parmar',
       password: process.env.INITIAL_MANAGER_PASSWORD || (!isProduction ? 'Manager@2026!' : null),
-      fullName: process.env.INITIAL_MANAGER_NAME || 'Gym Manager',
+      fullName: process.env.INITIAL_MANAGER_NAME || 'Parmar',
       role: 'manager',
       trainerId: null
     },
@@ -36,9 +36,9 @@ function seedAuthUsers() {
       trainerId: null
     },
     {
-      username: process.env.INITIAL_TRAINER_USERNAME || 'trainer.aryan',
+      username: process.env.INITIAL_TRAINER_USERNAME || 'sona.walia',
       password: process.env.INITIAL_TRAINER_PASSWORD || (!isProduction ? 'Trainer@2026!' : null),
-      fullName: process.env.INITIAL_TRAINER_NAME || 'Coach Aryan',
+      fullName: process.env.INITIAL_TRAINER_NAME || 'Sona Walia',
       role: 'trainer',
       trainerId: Number(process.env.INITIAL_TRAINER_ID || 101)
     }
@@ -72,9 +72,82 @@ function seedAuthUsers() {
   console.log(`Created ${candidates.length} initial role-based staff account(s).`);
 }
 
+function migrateLegacyStaffIdentities() {
+  const migrations = [
+    {
+      oldUsername: 'owner',
+      newUsername: 'ashish',
+      fullName: 'Ashish',
+      role: 'owner',
+      legacyNames: ['Samrat Gym Owner']
+    },
+    {
+      oldUsername: 'manager',
+      newUsername: 'parmar',
+      fullName: 'Parmar',
+      role: 'manager',
+      legacyNames: ['Gym Manager']
+    },
+    {
+      oldUsername: 'trainer.aryan',
+      newUsername: 'sona.walia',
+      fullName: 'Sona Walia',
+      role: 'trainer',
+      legacyNames: ['Coach Aryan']
+    }
+  ];
+
+  for (const migration of migrations) {
+    const legacy = db.prepare('SELECT * FROM Users WHERE username = ? COLLATE NOCASE AND role = ?')
+      .get(migration.oldUsername, migration.role);
+    const target = db.prepare('SELECT * FROM Users WHERE username = ? COLLATE NOCASE AND role = ?')
+      .get(migration.newUsername, migration.role);
+
+    if (legacy && !target) {
+      const changedAt = new Date().toISOString();
+      const tx = db.transaction(() => {
+        db.prepare(`
+          UPDATE Users
+          SET username = ?, full_name = ?, token_version = token_version + 1, updated_at = ?
+          WHERE id = ?
+        `).run(migration.newUsername, migration.fullName, changedAt, legacy.id);
+        db.prepare(`
+          UPDATE AuthSessions SET revoked_at = COALESCE(revoked_at, ?)
+          WHERE user_id = ? AND revoked_at IS NULL
+        `).run(changedAt, legacy.id);
+      });
+      tx();
+      logAudit(null, 'System', 'Migrate Staff Identity', 'Users', legacy.id,
+        { username: migration.oldUsername, fullName: legacy.full_name },
+        { username: migration.newUsername, fullName: migration.fullName });
+      console.log(`Updated staff login ${migration.oldUsername} → ${migration.newUsername}.`);
+    } else if (legacy && target && legacy.id !== target.id) {
+      // If the requested identity already exists, retire the legacy login rather than retaining duplicate access.
+      const changedAt = new Date().toISOString();
+      db.transaction(() => {
+        db.prepare(`
+          UPDATE Users SET active = 0, token_version = token_version + 1, updated_at = ? WHERE id = ?
+        `).run(changedAt, legacy.id);
+        db.prepare(`
+          UPDATE AuthSessions SET revoked_at = COALESCE(revoked_at, ?)
+          WHERE user_id = ? AND revoked_at IS NULL
+        `).run(changedAt, legacy.id);
+      })();
+    } else if (target && migration.legacyNames.includes(target.full_name)) {
+      db.prepare('UPDATE Users SET full_name = ?, updated_at = ? WHERE id = ?')
+        .run(migration.fullName, new Date().toISOString(), target.id);
+    }
+  }
+
+  // Keep seeded PT content aligned with the renamed trainer on existing databases.
+  db.prepare("UPDATE AddOns SET title = replace(title, 'Coach Aryan', 'Sona Walia') WHERE title LIKE '%Coach Aryan%'").run();
+  db.prepare("UPDATE FollowUps SET notes = replace(notes, 'Coach Aryan', 'Sona Walia') WHERE notes LIKE '%Coach Aryan%'").run();
+}
+
 function seedDatabase() {
   initDatabase();
   seedAuthUsers();
+  migrateLegacyStaffIdentities();
 
   // Check if members already seeded
   const memberCount = db.prepare('SELECT COUNT(*) as count FROM Members').get().count;
@@ -102,7 +175,7 @@ function seedDatabase() {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  const pt1 = insertAddOn.run('PT', 'Personal Training - 12 Sessions (Coach Aryan)', '1-on-1 personalized strength & hypertrophy coaching with weekly progressive overload tracking.', 4500, 45, 12, 10, 1, 101, 'ACE Certified Personal Trainer, 6+ Yrs Experience', 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=300').lastInsertRowid;
+  const pt1 = insertAddOn.run('PT', 'Personal Training - 12 Sessions (Sona Walia)', '1-on-1 personalized strength & hypertrophy coaching with weekly progressive overload tracking.', 4500, 45, 12, 10, 1, 101, 'ACE Certified Personal Trainer, 6+ Yrs Experience', 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=300').lastInsertRowid;
   const pt2 = insertAddOn.run('PT', 'Functional & Fat Loss PT - 24 Sessions (Coach Priya)', 'High intensity metabolic conditioning, posture correction, and tailored functional fitness.', 8000, 90, 24, 8, 1, 102, 'K11 Certified Master Trainer, Sports Conditioning Spec.', 'https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=300').lastInsertRowid;
   const diet1 = insertAddOn.run('Diet', 'Custom Macro & Calorie Meal Plan', 'Personalized Indian vegetarian/non-vegetarian weekly diet chart with grocery list and WhatsApp support.', 1200, 30, 1, 999, 1, 103, 'Registered Sports Dietitian (M.Sc Clinical Nutrition)', 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=300').lastInsertRowid;
   const prod1 = insertAddOn.run('Product', 'Samrat Premium Whey Isolate (2 kg - Chocolate)', '100% pure whey isolate, 27g protein per scoop, zero added sugar, lab tested & verified.', 3800, null, 1, 15, 1, null, 'FSSAI Certified, Batch Tested', 'https://images.unsplash.com/photo-1579722821273-0f6c7d44362f?w=300').lastInsertRowid;
@@ -362,7 +435,7 @@ function seedDatabase() {
     case3,
     'Call',
     'Injured',
-    'Mild lower back spasm from office desk posture. Offered complimentary stretching session with Coach Aryan once recovered.',
+    'Mild lower back spasm from office desk posture. Offered complimentary stretching session with Sona Walia once recovered.',
     1,
     `${getPastDateStr(5)} 16:20:00`,
     getFutureDateStr(3)

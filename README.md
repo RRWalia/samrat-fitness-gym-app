@@ -50,10 +50,10 @@ On a new **non-production** database, these demo accounts are created:
 
 | Role | User ID | Password |
 | :--- | :--- | :--- |
-| Owner | `owner` | `Owner@2026!Gym` |
-| Manager | `manager` | `Manager@2026!` |
+| Owner | `Ashish` | `Owner@2026!Gym` |
+| Manager | `Parmar` | `Manager@2026!` |
 | Front Desk | `frontdesk` | `Desk@2026!Gym` |
-| Trainer (ID 101) | `trainer.aryan` | `Trainer@2026!` |
+| Trainer — Sona Walia (Trainer ID 101) | `sona.walia` | `Trainer@2026!` |
 
 These defaults are never created automatically in production. Set a random `JWT_SECRET` (32+ characters) and `INITIAL_OWNER_PASSWORD` before the first production start; see `.env.example`. Additional accounts can then be created under **Management Dashboard → Staff Access**.
 

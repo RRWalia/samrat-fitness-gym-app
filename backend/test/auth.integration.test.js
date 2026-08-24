@@ -11,6 +11,7 @@ process.env.BCRYPT_ROUNDS = '10';
 
 const { app } = require('../server');
 const { db } = require('../src/config/database');
+const { seedDatabase } = require('../src/config/seed');
 
 function request(baseUrl, route, { token, method = 'GET', body } = {}) {
   const headers = {};
@@ -50,19 +51,37 @@ test('JWT authentication, revocation, and role boundaries', async t => {
     assert.equal(health.data.status, 'OK');
   });
 
+  await t.test('existing legacy staff IDs migrate to the requested identities', () => {
+    db.prepare("UPDATE Users SET username = 'owner', full_name = 'Samrat Gym Owner' WHERE username = 'ashish'").run();
+    db.prepare("UPDATE Users SET username = 'manager', full_name = 'Gym Manager' WHERE username = 'parmar'").run();
+    db.prepare("UPDATE Users SET username = 'trainer.aryan', full_name = 'Coach Aryan' WHERE username = 'sona.walia'").run();
+    db.prepare("UPDATE AddOns SET title = replace(title, 'Sona Walia', 'Coach Aryan') WHERE title LIKE '%Sona Walia%'").run();
+
+    seedDatabase();
+
+    const identities = db.prepare("SELECT username, full_name, role FROM Users ORDER BY role").all();
+    assert.ok(identities.some(user => user.username === 'ashish' && user.full_name === 'Ashish' && user.role === 'owner'));
+    assert.ok(identities.some(user => user.username === 'parmar' && user.full_name === 'Parmar' && user.role === 'manager'));
+    assert.ok(identities.some(user => user.username === 'sona.walia' && user.full_name === 'Sona Walia' && user.role === 'trainer'));
+    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM Users WHERE username IN ('owner', 'manager', 'trainer.aryan')").get().count, 0);
+    assert.match(db.prepare("SELECT title FROM AddOns WHERE type = 'PT' AND trainer_id = 101").get().title, /Sona Walia/);
+  });
+
   await t.test('passwords are bcrypt hashes and login returns a bounded JWT session', async () => {
-    const storedOwner = db.prepare("SELECT * FROM Users WHERE username = 'owner'").get();
+    const storedOwner = db.prepare("SELECT * FROM Users WHERE username = 'ashish'").get();
     assert.match(storedOwner.password_hash, /^\$2[aby]\$/);
     assert.notEqual(storedOwner.password_hash, 'Owner@2026!Gym');
 
-    const failed = await login(baseUrl, 'owner', 'wrong-password');
+    const failed = await login(baseUrl, 'Ashish', 'wrong-password');
     assert.equal(failed.status, 401);
     assert.equal(failed.data.error, 'Invalid username or password.');
 
-    const response = await login(baseUrl, 'owner', 'Owner@2026!Gym');
+    const response = await login(baseUrl, 'Ashish', 'Owner@2026!Gym');
     assert.equal(response.status, 200);
     assert.equal(response.data.success, true);
     assert.equal(response.data.user.role, 'owner');
+    assert.equal(response.data.user.username, 'ashish');
+    assert.equal(response.data.user.fullName, 'Ashish');
     assert.equal(response.data.token.split('.').length, 3);
     assert.equal('password_hash' in response.data.user, false);
     ownerToken = response.data.token;
@@ -83,9 +102,11 @@ test('JWT authentication, revocation, and role boundaries', async t => {
   });
 
   await t.test('manager receives the same full operational access tier', async () => {
-    const managerLogin = await login(baseUrl, 'manager', 'Manager@2026!');
+    const managerLogin = await login(baseUrl, 'Parmar', 'Manager@2026!');
     assert.equal(managerLogin.status, 200);
     assert.equal(managerLogin.data.user.role, 'manager');
+    assert.equal(managerLogin.data.user.username, 'parmar');
+    assert.equal(managerLogin.data.user.fullName, 'Parmar');
 
     const dashboard = await request(baseUrl, '/api/dashboard/stats', { token: managerLogin.data.token });
     const settings = await request(baseUrl, '/api/dashboard/settings', { token: managerLogin.data.token });
@@ -166,8 +187,10 @@ test('JWT authentication, revocation, and role boundaries', async t => {
   });
 
   await t.test('trainer sees only assigned PT clients and no order amount', async () => {
-    const loginResponse = await login(baseUrl, 'trainer.aryan', 'Trainer@2026!');
+    const loginResponse = await login(baseUrl, 'sona.walia', 'Trainer@2026!');
     assert.equal(loginResponse.status, 200);
+    assert.equal(loginResponse.data.user.username, 'sona.walia');
+    assert.equal(loginResponse.data.user.fullName, 'Sona Walia');
     trainerToken = loginResponse.data.token;
 
     const orders = await request(baseUrl, '/api/addons/active-orders', { token: trainerToken });
@@ -209,9 +232,9 @@ test('JWT authentication, revocation, and role boundaries', async t => {
     const oldSession = await request(baseUrl, '/api/addons/active-orders', { token: trainerToken });
     assert.equal(oldSession.status, 401);
 
-    const oldPassword = await login(baseUrl, 'trainer.aryan', 'Trainer@2026!');
+    const oldPassword = await login(baseUrl, 'sona.walia', 'Trainer@2026!');
     assert.equal(oldPassword.status, 401);
-    const newPassword = await login(baseUrl, 'trainer.aryan', 'TrainerNext@2026!');
+    const newPassword = await login(baseUrl, 'sona.walia', 'TrainerNext@2026!');
     assert.equal(newPassword.status, 200);
   });
 

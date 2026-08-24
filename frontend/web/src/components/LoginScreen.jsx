@@ -20,9 +20,10 @@ const roleCards = [
 ];
 
 const demoAccounts = import.meta.env.DEV ? [
-  { label: 'Owner', username: 'owner', password: 'Owner@2026!Gym' },
+  { label: 'Owner', username: 'Ashish', password: 'Owner@2026!Gym' },
+  { label: 'Manager', username: 'Parmar', password: 'Manager@2026!' },
   { label: 'Front Desk', username: 'frontdesk', password: 'Desk@2026!Gym' },
-  { label: 'Trainer', username: 'trainer.aryan', password: 'Trainer@2026!' }
+  { label: 'Trainer · Sona Walia', username: 'sona.walia', password: 'Trainer@2026!' }
 ] : [];
 
 export default function LoginScreen({ onLogin, notice }) {
