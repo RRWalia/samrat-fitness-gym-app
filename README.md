@@ -61,7 +61,9 @@ On a new **non-production** database, these demo accounts are created:
 | Front Desk | `frontdesk` | `Desk@2026!Gym` |
 | Trainer — Sona Walia (Trainer ID 101) | `sona.walia` | `Trainer@2026!` |
 
-These demo passwords are never created automatically in production. For a direct deployment, set a random `JWT_SECRET` (32+ characters) and the required `INITIAL_*_PASSWORD` values before the first production start; see `.env.example`. The Render Blueprint instead generates independent, high-entropy JWT and bootstrap passwords for all four staff roles—no production password is stored in Git. An authorized Render administrator can reveal/copy those generated `INITIAL_*_PASSWORD` values from the service's **Environment** page. Additional accounts can then be managed under **Management Dashboard → Staff Access**.
+These demo passwords are never created automatically in production. For a direct deployment, set a random `JWT_SECRET` (32+ characters) and the required `INITIAL_*_PASSWORD` values before the first production start; see `.env.example`. The Render Blueprint generates independent, high-entropy JWT and bootstrap passwords for all four staff roles—no production password is stored in Git. An authorized Render administrator can reveal/copy those generated `INITIAL_*_PASSWORD` values from the service's **Environment** page.
+
+If a manually-created Render service starts with an empty production database and no `INITIAL_OWNER_PASSWORD`, the app now creates a secure random owner bootstrap password instead of crashing. Copy the generated `username="..." password="..."` line from the deploy logs, sign in once, and immediately change the password under **Management Dashboard → Staff Access**. Set `STRICT_PRODUCTION_BOOTSTRAP=true` if you prefer production to fail fast until `INITIAL_OWNER_PASSWORD` is configured. Additional accounts can then be managed under **Management Dashboard → Staff Access**.
 
 Run the authentication/RBAC integration suite with:
 

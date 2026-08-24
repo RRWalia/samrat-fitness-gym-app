@@ -1,21 +1,67 @@
 const bcrypt = require('bcrypt');
-const { db, initDatabase, logAudit } = require('./database');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const { db, dbPath, initDatabase, logAudit } = require('./database');
 const { validatePassword, bcryptRounds } = require('../auth/password');
+
+function getBootstrapPasswordFile() {
+  return process.env.INITIAL_OWNER_PASSWORD_FILE
+    ? path.resolve(process.env.INITIAL_OWNER_PASSWORD_FILE)
+    : path.join(path.dirname(dbPath), '.initial-owner-password');
+}
+
+function generateOwnerBootstrapPassword(username) {
+  const password = `SFK-${crypto.randomBytes(24).toString('base64url')}-Aa1!`;
+  const passwordFile = getBootstrapPasswordFile();
+
+  try {
+    fs.mkdirSync(path.dirname(passwordFile), { recursive: true });
+    fs.writeFileSync(passwordFile, `${password}\n`, { mode: 0o600, flag: 'wx' });
+    console.warn(`INITIAL_OWNER_PASSWORD is not set. Generated a secure bootstrap owner password for "${username}" and saved it to ${passwordFile}.`);
+  } catch (err) {
+    if (err.code === 'EEXIST') {
+      try {
+        const savedPassword = fs.readFileSync(passwordFile, 'utf8').trim();
+        if (savedPassword) {
+          console.warn(`INITIAL_OWNER_PASSWORD is not set. Reusing generated bootstrap owner password from ${passwordFile}.`);
+          console.warn(`Generated owner login: username="${username}" password="${savedPassword}"`);
+          return savedPassword;
+        }
+      } catch (readErr) {
+        console.warn(`Existing bootstrap password file could not be read: ${readErr.message}`);
+      }
+    }
+    console.warn(`INITIAL_OWNER_PASSWORD is not set and the generated password could not be saved (${err.message}). The password below is the only copy.`);
+  }
+
+  console.warn(`Generated owner login: username="${username}" password="${password}"`);
+  console.warn('After first login, change this password in Staff Access or set INITIAL_OWNER_PASSWORD in the Render environment before recreating the database.');
+  return password;
+}
+
+function resolveOwnerPassword(username, isProduction) {
+  if (process.env.INITIAL_OWNER_PASSWORD) return process.env.INITIAL_OWNER_PASSWORD;
+  if (!isProduction) return 'Owner@2026!Gym';
+
+  if (process.env.STRICT_PRODUCTION_BOOTSTRAP === 'true') {
+    throw new Error('INITIAL_OWNER_PASSWORD is required when creating the first production owner account.');
+  }
+
+  return generateOwnerBootstrapPassword(username);
+}
 
 function seedAuthUsers() {
   const userCount = db.prepare('SELECT COUNT(*) AS count FROM Users').get().count;
   if (userCount > 0) return;
 
   const isProduction = process.env.NODE_ENV === 'production';
-  const ownerPassword = process.env.INITIAL_OWNER_PASSWORD || (!isProduction ? 'Owner@2026!Gym' : null);
-
-  if (!ownerPassword) {
-    throw new Error('INITIAL_OWNER_PASSWORD is required when creating the first production owner account.');
-  }
+  const ownerUsername = process.env.INITIAL_OWNER_USERNAME || 'ashish';
+  const ownerPassword = resolveOwnerPassword(ownerUsername, isProduction);
 
   const candidates = [
     {
-      username: process.env.INITIAL_OWNER_USERNAME || 'ashish',
+      username: ownerUsername,
       password: ownerPassword,
       fullName: process.env.INITIAL_OWNER_NAME || 'Ashish',
       role: 'owner',
