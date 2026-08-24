@@ -98,21 +98,29 @@ class RenewalsController {
    */
   static processRenewal(req, res) {
     try {
-      const { member_id, plan_id, amount, payment_method = 'UPI / Razorpay', staff_id } = req.body;
+      const { member_id, plan_id } = req.body;
 
-      if (!member_id || !plan_id || !amount) {
-        return res.status(400).json({ error: 'Missing required renewal parameters: member_id, plan_id, amount.' });
+      if (!member_id || !plan_id) {
+        return res.status(400).json({ success: false, error: 'member_id and plan_id are required.' });
+      }
+      const member = db.prepare('SELECT id FROM Members WHERE id = ?').get(member_id);
+      const plan = db.prepare('SELECT * FROM Plans WHERE id = ? AND active = 1').get(plan_id);
+      if (!member || !plan) {
+        return res.status(404).json({ success: false, error: 'Member or active plan not found.' });
       }
 
+      // Never trust a browser-supplied payable amount.
+      const amount = Math.max(0, plan.base_price - (plan.discount || 0) - 200);
       const providerReference = `RZP_REN_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
 
       const result = AutomationService.processPaymentVerification({
         memberId: member_id,
         orderType: 'RENEWAL',
         planId: plan_id,
-        amount: Number(amount),
+        amount,
         providerReference,
-        staffId: staff_id || 1
+        staffId: req.user.id,
+        staffRole: req.user.role
       });
 
       return res.json({

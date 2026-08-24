@@ -1,4 +1,5 @@
 const { db, logAudit } = require('../config/database');
+const { actorTypeForRole } = require('../auth/roles');
 
 class AutomationService {
   /**
@@ -180,7 +181,7 @@ class AutomationService {
   /**
    * 3. Idempotent Payment Processor & Automatic Fulfillment
    */
-  static processPaymentVerification({ memberId, orderType, orderId, planId, addonId, amount, providerReference, staffId }) {
+  static processPaymentVerification({ memberId, orderType, orderId, planId, addonId, amount, providerReference, staffId, staffRole }) {
     // Check if providerReference already processed (Idempotency check)
     const existingPayment = db.prepare('SELECT * FROM Payments WHERE provider_reference = ?').get(providerReference);
     if (existingPayment && existingPayment.status === 'Paid') {
@@ -252,7 +253,7 @@ class AutomationService {
           VALUES (?, 'Payment Success', 'WhatsApp', ?, datetime('now', 'localtime'), 'Delivered')
         `).run(memberId, msg);
 
-        logAudit(staffId || 1, staffId ? 'Staff' : 'System', 'Membership Renewal Payment', 'Memberships', newMembershipRes.lastInsertRowid, null, {
+        logAudit(staffId || null, staffId ? actorTypeForRole(staffRole) : 'System', 'Membership Renewal Payment', 'Memberships', newMembershipRes.lastInsertRowid, null, {
           memberId,
           planName: plan.name,
           amount,
@@ -288,7 +289,7 @@ class AutomationService {
           VALUES (?, 'Add-on Purchase Success', 'WhatsApp', ?, datetime('now', 'localtime'), 'Delivered')
         `).run(memberId, msg);
 
-        logAudit(staffId || 1, staffId ? 'Staff' : 'System', 'Add-on Purchase Payment', 'AddOnOrders', addonOrderRes.lastInsertRowid, null, {
+        logAudit(staffId || null, staffId ? actorTypeForRole(staffRole) : 'System', 'Add-on Purchase Payment', 'AddOnOrders', addonOrderRes.lastInsertRowid, null, {
           memberId,
           addonTitle: addon.title,
           amount,

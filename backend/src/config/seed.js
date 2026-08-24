@@ -1,7 +1,80 @@
+const bcrypt = require('bcrypt');
 const { db, initDatabase, logAudit } = require('./database');
+const { validatePassword, bcryptRounds } = require('../auth/password');
+
+function seedAuthUsers() {
+  const userCount = db.prepare('SELECT COUNT(*) AS count FROM Users').get().count;
+  if (userCount > 0) return;
+
+  const isProduction = process.env.NODE_ENV === 'production';
+  const ownerPassword = process.env.INITIAL_OWNER_PASSWORD || (!isProduction ? 'Owner@2026!Gym' : null);
+
+  if (!ownerPassword) {
+    throw new Error('INITIAL_OWNER_PASSWORD is required when creating the first production owner account.');
+  }
+
+  const candidates = [
+    {
+      username: process.env.INITIAL_OWNER_USERNAME || 'owner',
+      password: ownerPassword,
+      fullName: process.env.INITIAL_OWNER_NAME || 'Samrat Gym Owner',
+      role: 'owner',
+      trainerId: null
+    },
+    {
+      username: process.env.INITIAL_MANAGER_USERNAME || 'manager',
+      password: process.env.INITIAL_MANAGER_PASSWORD || (!isProduction ? 'Manager@2026!' : null),
+      fullName: process.env.INITIAL_MANAGER_NAME || 'Gym Manager',
+      role: 'manager',
+      trainerId: null
+    },
+    {
+      username: process.env.INITIAL_FRONT_DESK_USERNAME || 'frontdesk',
+      password: process.env.INITIAL_FRONT_DESK_PASSWORD || (!isProduction ? 'Desk@2026!Gym' : null),
+      fullName: process.env.INITIAL_FRONT_DESK_NAME || 'Front Desk Team',
+      role: 'front_desk',
+      trainerId: null
+    },
+    {
+      username: process.env.INITIAL_TRAINER_USERNAME || 'trainer.aryan',
+      password: process.env.INITIAL_TRAINER_PASSWORD || (!isProduction ? 'Trainer@2026!' : null),
+      fullName: process.env.INITIAL_TRAINER_NAME || 'Coach Aryan',
+      role: 'trainer',
+      trainerId: Number(process.env.INITIAL_TRAINER_ID || 101)
+    }
+  ].filter(user => user.password);
+
+  for (const user of candidates) {
+    const passwordError = validatePassword(user.password);
+    if (passwordError) {
+      throw new Error(`Initial password for ${user.username} is not secure: ${passwordError}`);
+    }
+  }
+
+  const insertUser = db.prepare(`
+    INSERT INTO Users (username, password_hash, full_name, role, trainer_id, active)
+    VALUES (?, ?, ?, ?, ?, 1)
+  `);
+
+  const transaction = db.transaction(() => {
+    for (const user of candidates) {
+      insertUser.run(
+        user.username.trim().toLowerCase(),
+        bcrypt.hashSync(user.password, bcryptRounds()),
+        user.fullName.trim(),
+        user.role,
+        user.trainerId
+      );
+    }
+  });
+
+  transaction();
+  console.log(`Created ${candidates.length} initial role-based staff account(s).`);
+}
 
 function seedDatabase() {
   initDatabase();
+  seedAuthUsers();
 
   // Check if members already seeded
   const memberCount = db.prepare('SELECT COUNT(*) as count FROM Members').get().count;
@@ -56,6 +129,7 @@ function seedDatabase() {
       join_date: getPastDateStr(180),
       status: 'Active',
       risk_state: 'Normal',
+      assigned_trainer_id: 101,
       plan_id: plan12,
       start_date: getPastDateStr(180),
       expiry_date: getFutureDateStr(185),
@@ -82,6 +156,7 @@ function seedDatabase() {
       join_date: getPastDateStr(60),
       status: 'Active',
       risk_state: 'Normal',
+      assigned_trainer_id: 102,
       plan_id: plan3,
       start_date: getPastDateStr(60),
       expiry_date: getFutureDateStr(30),
@@ -182,8 +257,8 @@ function seedDatabase() {
   ];
 
   const insertMember = db.prepare(`
-    INSERT INTO Members (name, phone, email, consent, join_date, status, risk_state)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO Members (name, phone, email, consent, join_date, status, risk_state, assigned_trainer_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const insertMembership = db.prepare(`
@@ -204,7 +279,16 @@ function seedDatabase() {
   const memberIds = [];
 
   for (const m of membersData) {
-    const memberRes = insertMember.run(m.name, m.phone, m.email, 1, m.join_date, m.status, m.risk_state);
+    const memberRes = insertMember.run(
+      m.name,
+      m.phone,
+      m.email,
+      1,
+      m.join_date,
+      m.status,
+      m.risk_state,
+      m.assigned_trainer_id || null
+    );
     const memberId = memberRes.lastInsertRowid;
     memberIds.push(memberId);
 

@@ -11,6 +11,12 @@ services:
         value: production
       - key: PORT
         value: 10000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: INITIAL_OWNER_USERNAME
+        value: owner
+      - key: INITIAL_OWNER_PASSWORD
+        sync: false
       - key: GYM_NAME
         value: "Samrat Fitness King"
       - key: TIMEZONE

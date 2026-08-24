@@ -1,162 +1,228 @@
 const API_BASE = '/api';
+const SESSION_KEY = 'samrat_staff_session';
+
+function readStorage(storage) {
+  try {
+    const raw = storage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw);
+    if (!session?.token || !session?.expiresAt || !session?.user) return null;
+    return session;
+  } catch {
+    return null;
+  }
+}
+
+export function getStoredSession() {
+  return readStorage(sessionStorage) || readStorage(localStorage);
+}
+
+export function storeSession(authPayload, rememberMe) {
+  const session = {
+    token: authPayload.token,
+    expiresAt: authPayload.expiresAt,
+    user: authPayload.user,
+    rememberMe: Boolean(rememberMe)
+  };
+  clearStoredSession();
+  const storage = rememberMe ? localStorage : sessionStorage;
+  storage.setItem(SESSION_KEY, JSON.stringify(session));
+  return session;
+}
+
+export function clearStoredSession() {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch { /* storage unavailable */ }
+  try { localStorage.removeItem(SESSION_KEY); } catch { /* storage unavailable */ }
+}
+
+function emitUnauthorized(code = 'AUTH_REQUIRED') {
+  window.dispatchEvent(new CustomEvent('samrat:unauthorized', { detail: { code } }));
+}
+
+async function apiRequest(path, options = {}) {
+  const { auth = true, suppressAuthEvent = false, ...fetchOptions } = options;
+  const session = getStoredSession();
+
+  if (auth && session && Date.parse(session.expiresAt) <= Date.now()) {
+    clearStoredSession();
+    if (!suppressAuthEvent) emitUnauthorized('SESSION_EXPIRED');
+    return { success: false, error: 'Your session has expired.', code: 'SESSION_EXPIRED' };
+  }
+
+  const headers = new Headers(fetchOptions.headers || {});
+  if (fetchOptions.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (auth && session?.token) headers.set('Authorization', `Bearer ${session.token}`);
+
+  const response = await fetch(`${API_BASE}${path}`, { ...fetchOptions, headers });
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    data = { success: false, error: 'The server returned an invalid response.' };
+  }
+
+  if (response.status === 401 && auth && !suppressAuthEvent) {
+    clearStoredSession();
+    emitUnauthorized(data.code || 'AUTH_REQUIRED');
+  }
+  return { ...data, httpStatus: response.status };
+}
+
+export async function loginUser({ username, password, rememberMe }) {
+  const result = await apiRequest('/auth/login', {
+    method: 'POST',
+    auth: false,
+    suppressAuthEvent: true,
+    body: JSON.stringify({ username, password, rememberMe })
+  });
+  if (result.success) storeSession(result, rememberMe);
+  return result;
+}
+
+export async function fetchCurrentUser() {
+  return apiRequest('/auth/me');
+}
+
+export async function logoutUser() {
+  try {
+    return await apiRequest('/auth/logout', { method: 'POST', suppressAuthEvent: true });
+  } finally {
+    clearStoredSession();
+  }
+}
+
+export async function logoutAllSessions() {
+  const result = await apiRequest('/auth/logout-all', { method: 'POST' });
+  if (result.success) clearStoredSession();
+  return result;
+}
+
+export async function changePassword(currentPassword, newPassword) {
+  return apiRequest('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ currentPassword, newPassword })
+  });
+}
 
 export async function fetchStats() {
-  const res = await fetch(`${API_BASE}/dashboard/stats`);
-  return res.json();
+  return apiRequest('/dashboard/stats');
 }
 
 export async function fetchDailySummary() {
-  const res = await fetch(`${API_BASE}/dashboard/daily-summary`);
-  return res.json();
+  return apiRequest('/dashboard/daily-summary');
 }
 
 export async function fetchAuditLogs() {
-  const res = await fetch(`${API_BASE}/dashboard/audit-logs`);
-  return res.json();
+  return apiRequest('/dashboard/audit-logs');
 }
 
 export async function fetchSettings() {
-  const res = await fetch(`${API_BASE}/dashboard/settings`);
-  return res.json();
+  return apiRequest('/dashboard/settings');
 }
 
 export async function updateSettings(settings) {
-  const res = await fetch(`${API_BASE}/dashboard/settings`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(settings)
-  });
-  return res.json();
+  return apiRequest('/dashboard/settings', { method: 'PUT', body: JSON.stringify(settings) });
 }
 
 export async function fetchMembers(params = {}) {
-  const query = new URLSearchParams(params).toString();
-  const res = await fetch(`${API_BASE}/members?${query}`);
-  return res.json();
+  const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')).toString();
+  return apiRequest(`/members${query ? `?${query}` : ''}`);
 }
 
 export async function fetchMemberDetails(id) {
-  const res = await fetch(`${API_BASE}/members/${id}`);
-  return res.json();
+  return apiRequest(`/members/${id}`);
 }
 
 export async function createMember(data) {
-  const res = await fetch(`${API_BASE}/members`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-  return res.json();
+  return apiRequest('/members', { method: 'POST', body: JSON.stringify(data) });
 }
 
 export async function updateMemberStatus(id, status, reason) {
-  const res = await fetch(`${API_BASE}/members/${id}/status`, {
+  return apiRequest(`/members/${id}/status`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status, reason })
   });
-  return res.json();
 }
 
 export async function fetchQrSession() {
-  const res = await fetch(`${API_BASE}/attendance/qr-session`);
-  return res.json();
+  return apiRequest('/attendance/qr-session');
 }
 
 export async function performCheckIn(data) {
-  const res = await fetch(`${API_BASE}/attendance/check-in`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-  return res.json();
+  return apiRequest('/attendance/check-in', { method: 'POST', body: JSON.stringify(data) });
 }
 
 export async function fetchAttendanceHistory(params = {}) {
   const query = new URLSearchParams(params).toString();
-  const res = await fetch(`${API_BASE}/attendance/history?${query}`);
-  return res.json();
+  return apiRequest(`/attendance/history${query ? `?${query}` : ''}`);
 }
 
 export async function fetchRedList(params = {}) {
-  const query = new URLSearchParams(params).toString();
-  const res = await fetch(`${API_BASE}/red-list?${query}`);
-  return res.json();
+  const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')).toString();
+  return apiRequest(`/red-list${query ? `?${query}` : ''}`);
 }
 
 export async function recordFollowUp(data) {
-  const res = await fetch(`${API_BASE}/red-list/follow-up`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-  return res.json();
+  return apiRequest('/red-list/follow-up', { method: 'POST', body: JSON.stringify(data) });
 }
 
 export async function triggerNoShowScan() {
-  const res = await fetch(`${API_BASE}/red-list/scan`, { method: 'POST' });
-  return res.json();
+  return apiRequest('/red-list/scan', { method: 'POST' });
 }
 
 export async function fetchExpiringRenewals(params = {}) {
   const query = new URLSearchParams(params).toString();
-  const res = await fetch(`${API_BASE}/renewals/expiring?${query}`);
-  return res.json();
+  return apiRequest(`/renewals/expiring${query ? `?${query}` : ''}`);
 }
 
 export async function fetchRenewalOffers(memberId) {
-  const res = await fetch(`${API_BASE}/renewals/offers/${memberId}`);
-  return res.json();
+  return apiRequest(`/renewals/offers/${memberId}`);
 }
 
 export async function processRenewalPayment(data) {
-  const res = await fetch(`${API_BASE}/renewals/process`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-  return res.json();
+  return apiRequest('/renewals/process', { method: 'POST', body: JSON.stringify(data) });
 }
 
 export async function triggerRenewalScan() {
-  const res = await fetch(`${API_BASE}/renewals/scan`, { method: 'POST' });
-  return res.json();
+  return apiRequest('/renewals/scan', { method: 'POST' });
 }
 
 export async function fetchReceipt(paymentId) {
-  const res = await fetch(`${API_BASE}/receipts/renewal/${paymentId}`);
-  return res.json();
+  return apiRequest(`/receipts/renewal/${paymentId}`);
 }
 
 export async function fetchAddOns(type) {
-  const res = await fetch(`${API_BASE}/addons${type ? `?type=${type}` : ''}`);
-  return res.json();
+  return apiRequest(`/addons${type ? `?type=${encodeURIComponent(type)}` : ''}`);
 }
 
 export async function purchaseAddOn(data) {
-  const res = await fetch(`${API_BASE}/addons/purchase`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-  return res.json();
+  return apiRequest('/addons/purchase', { method: 'POST', body: JSON.stringify(data) });
 }
 
 export async function logPtUsage(data) {
-  const res = await fetch(`${API_BASE}/addons/log-usage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-  return res.json();
+  return apiRequest('/addons/log-usage', { method: 'POST', body: JSON.stringify(data) });
 }
 
 export async function fetchActiveAddonOrders() {
-  const res = await fetch(`${API_BASE}/addons/active-orders`);
-  return res.json();
+  return apiRequest('/addons/active-orders');
 }
 
 export async function fetchPlans() {
-  const res = await fetch(`${API_BASE}/plans`);
-  return res.json();
+  return apiRequest('/plans');
+}
+
+export async function fetchStaffUsers() {
+  return apiRequest('/users');
+}
+
+export async function createStaffUser(data) {
+  return apiRequest('/users', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export async function updateStaffUser(id, data) {
+  return apiRequest(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+}
+
+export async function resetStaffPassword(id, password) {
+  return apiRequest(`/users/${id}/password`, { method: 'PUT', body: JSON.stringify({ password }) });
 }

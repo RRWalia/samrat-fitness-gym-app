@@ -1,59 +1,88 @@
+require('dotenv').config({ quiet: true });
+
 const express = require('express');
-const cors = require('cors');
+const helmet = require('helmet');
 const morgan = require('morgan');
 const path = require('path');
 const fs = require('fs');
 const { initDatabase } = require('./src/config/database');
 const { seedDatabase } = require('./src/config/seed');
+const { validateAuthConfiguration, authenticateToken } = require('./src/middleware/auth.middleware');
+const authRoutes = require('./src/routes/auth');
 const apiRoutes = require('./src/routes/api');
 
-const app = express();
-const PORT = process.env.PORT || 5001;
-
-// Middleware
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-app.use(express.json());
-app.use(morgan('dev'));
-
-// Initialize DB and Seed data
+validateAuthConfiguration();
 initDatabase();
 seedDatabase();
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    app: 'Samrat Fitness King API',
-    time: new Date().toISOString()
-  });
+const app = express();
+const PORT = Number(process.env.PORT || 5001);
+
+app.disable('x-powered-by');
+if (process.env.NODE_ENV === 'production') app.set('trust proxy', 1);
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https://images.unsplash.com'],
+      connectSrc: ["'self'", 'ws:', 'wss:'],
+      fontSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      frameAncestors: ["'self'", 'https://arena.ai', 'https://*.arena.ai', 'https://*.e2b.app']
+    }
+  },
+  // Arena previews are intentionally embedded; CSP above remains the source of truth.
+  frameguard: false,
+  crossOriginEmbedderPolicy: false
+}));
+app.use(express.json({ limit: '100kb' }));
+if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
+
+// API responses containing operational data must never be cached by shared clients.
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
 });
 
-// API Routes
-app.use('/api', apiRoutes);
+// Public endpoints: authentication and a metadata-only health probe.
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', app: 'Samrat Fitness King API', time: new Date().toISOString() });
+});
+app.use('/api/auth', authRoutes);
 
-// Static frontend serving if built
+// Every remaining API route requires a live, non-revoked JWT session.
+app.use('/api', authenticateToken, apiRoutes);
+app.use('/api', (req, res) => {
+  res.status(404).json({ success: false, error: 'API route not found.', code: 'NOT_FOUND' });
+});
+
+// Serve the production React bundle from the same origin as the protected API.
 const frontendDist = path.join(__dirname, '../frontend/web/dist');
 if (fs.existsSync(frontendDist)) {
-  app.use(express.static(frontendDist));
+  app.use(express.static(frontendDist, { index: false }));
   app.use((req, res, next) => {
-    if (req.method === 'GET' && !req.path.startsWith('/api')) {
-      return res.sendFile(path.join(frontendDist, 'index.html'));
-    }
-    next();
+    if (!['GET', 'HEAD'].includes(req.method) || req.path.startsWith('/api')) return next();
+    return res.sendFile(path.join(frontendDist, 'index.html'));
   });
 }
 
-// Error Handling
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
-  res.status(500).json({ error: err.message || 'Internal Server Error' });
+  if (res.headersSent) return next(err);
+  const message = process.env.NODE_ENV === 'production' ? 'Internal Server Error' : (err.message || 'Internal Server Error');
+  return res.status(err.status || 500).json({ success: false, error: message });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Samrat Fitness King Backend running on http://0.0.0.0:${PORT}`);
-});
+function startServer(port = PORT) {
+  return app.listen(port, '0.0.0.0', () => {
+    console.log(`🚀 Samrat Fitness King API running on http://0.0.0.0:${port}`);
+  });
+}
+
+if (require.main === module) startServer();
+
+module.exports = { app, startServer };

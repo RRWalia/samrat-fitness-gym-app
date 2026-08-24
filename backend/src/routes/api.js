@@ -7,52 +7,62 @@ const RenewalsController = require('../controllers/renewals.controller');
 const MembersController = require('../controllers/members.controller');
 const AddOnsController = require('../controllers/addons.controller');
 const DashboardController = require('../controllers/dashboard.controller');
+const UsersController = require('../controllers/users.controller');
 const { db } = require('../config/database');
+const { authorizeRoles } = require('../middleware/auth.middleware');
+const { ROLES } = require('../auth/roles');
 
-// --- Attendance & QR ---
-router.get('/attendance/qr-session', AttendanceController.getQrSession);
-router.post('/attendance/check-in', AttendanceController.checkIn);
-router.get('/attendance/history', AttendanceController.getAttendanceHistory);
+const fullAccess = authorizeRoles(ROLES.OWNER, ROLES.MANAGER);
+const attendanceAccess = authorizeRoles(ROLES.OWNER, ROLES.MANAGER, ROLES.FRONT_DESK);
+const memberLookupAccess = authorizeRoles(ROLES.OWNER, ROLES.MANAGER, ROLES.FRONT_DESK, ROLES.TRAINER);
+const trainerAccess = authorizeRoles(ROLES.OWNER, ROLES.MANAGER, ROLES.TRAINER);
 
-// --- No-Show Red List & Recovery ---
-router.get('/red-list', RedListController.getRedList);
-router.post('/red-list/follow-up', RedListController.recordFollowUp);
-router.post('/red-list/scan', RedListController.triggerScan);
+// Attendance and assisted lookup are the only operational APIs exposed to front desk.
+router.get('/attendance/qr-session', attendanceAccess, AttendanceController.getQrSession);
+router.post('/attendance/check-in', attendanceAccess, AttendanceController.checkIn);
+router.get('/attendance/history', attendanceAccess, AttendanceController.getAttendanceHistory);
 
-// --- Renewals & Payments ---
-router.get('/renewals/expiring', RenewalsController.getExpiring);
-router.get('/renewals/offers/:memberId', RenewalsController.getRenewalOffers);
-router.post('/renewals/process', RenewalsController.processRenewal);
-router.post('/renewals/scan', RenewalsController.triggerReminders);
-router.get('/receipts/renewal/:paymentId', RenewalsController.getReceipt);
+// Owner/manager retention, financial, and customer-management APIs.
+router.get('/red-list', fullAccess, RedListController.getRedList);
+router.post('/red-list/follow-up', fullAccess, RedListController.recordFollowUp);
+router.post('/red-list/scan', fullAccess, RedListController.triggerScan);
 
-// --- Members ---
-router.get('/members', MembersController.getAllMembers);
-router.get('/members/:id', MembersController.getMemberById);
-router.post('/members', MembersController.createMember);
-router.patch('/members/:id/status', MembersController.toggleStatus);
+router.get('/renewals/expiring', fullAccess, RenewalsController.getExpiring);
+router.get('/renewals/offers/:memberId', fullAccess, RenewalsController.getRenewalOffers);
+router.post('/renewals/process', fullAccess, RenewalsController.processRenewal);
+router.post('/renewals/scan', fullAccess, RenewalsController.triggerReminders);
+router.get('/receipts/renewal/:paymentId', fullAccess, RenewalsController.getReceipt);
 
-// --- Plans ---
-router.get('/plans', (req, res) => {
+// List/detail responses are scoped and redacted by role in the controller.
+router.get('/members', memberLookupAccess, MembersController.getAllMembers);
+router.get('/members/:id', memberLookupAccess, MembersController.getMemberById);
+router.post('/members', fullAccess, MembersController.createMember);
+router.patch('/members/:id/status', fullAccess, MembersController.toggleStatus);
+
+router.get('/plans', fullAccess, (req, res) => {
   try {
     const plans = db.prepare('SELECT * FROM Plans WHERE active = 1 ORDER BY duration_months ASC').all();
     return res.json({ success: true, count: plans.length, data: plans });
   } catch (err) {
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ success: false, error: 'Unable to load plans.' });
   }
 });
 
-// --- Add-on Marketplace ---
-router.get('/addons', AddOnsController.getAddOns);
-router.post('/addons/purchase', AddOnsController.purchaseAddOn);
-router.post('/addons/log-usage', AddOnsController.logUsage);
-router.get('/addons/active-orders', AddOnsController.getActiveOrders);
+router.get('/addons', fullAccess, AddOnsController.getAddOns);
+router.post('/addons/purchase', fullAccess, AddOnsController.purchaseAddOn);
+router.post('/addons/log-usage', trainerAccess, AddOnsController.logUsage);
+router.get('/addons/active-orders', trainerAccess, AddOnsController.getActiveOrders);
 
-// --- Dashboard & System Analytics ---
-router.get('/dashboard/stats', DashboardController.getStats);
-router.get('/dashboard/daily-summary', DashboardController.getDailySummary);
-router.get('/dashboard/audit-logs', DashboardController.getAuditLogs);
-router.get('/dashboard/settings', DashboardController.getSettings);
-router.put('/dashboard/settings', DashboardController.updateSettings);
+router.get('/dashboard/stats', fullAccess, DashboardController.getStats);
+router.get('/dashboard/daily-summary', fullAccess, DashboardController.getDailySummary);
+router.get('/dashboard/audit-logs', fullAccess, DashboardController.getAuditLogs);
+router.get('/dashboard/settings', fullAccess, DashboardController.getSettings);
+router.put('/dashboard/settings', fullAccess, DashboardController.updateSettings);
+
+// Credential hashes are never returned by these owner/manager-only endpoints.
+router.get('/users', fullAccess, UsersController.list);
+router.post('/users', fullAccess, UsersController.create);
+router.patch('/users/:id', fullAccess, UsersController.update);
+router.put('/users/:id/password', fullAccess, UsersController.resetPassword);
 
 module.exports = router;

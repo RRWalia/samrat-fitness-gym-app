@@ -1,4 +1,5 @@
 const { db, logAudit } = require('../config/database');
+const { actorTypeForRole } = require('../auth/roles');
 
 class DashboardController {
   /**
@@ -216,6 +217,19 @@ class DashboardController {
     try {
       const { gym_name, gym_address, gym_hours, no_show_threshold, streak_rule, renewal_reminder_days, duplicate_scan_window_minutes } = req.body;
 
+      if (gym_name !== undefined && (!String(gym_name).trim() || String(gym_name).length > 100)) {
+        return res.status(400).json({ success: false, error: 'Gym name must be between 1 and 100 characters.' });
+      }
+      if (no_show_threshold !== undefined && (!Number.isInteger(Number(no_show_threshold)) || Number(no_show_threshold) < 1 || Number(no_show_threshold) > 90)) {
+        return res.status(400).json({ success: false, error: 'No-show threshold must be between 1 and 90 days.' });
+      }
+      if (duplicate_scan_window_minutes !== undefined && (!Number.isInteger(Number(duplicate_scan_window_minutes)) || Number(duplicate_scan_window_minutes) < 1 || Number(duplicate_scan_window_minutes) > 240)) {
+        return res.status(400).json({ success: false, error: 'Duplicate scan window must be between 1 and 240 minutes.' });
+      }
+      if (streak_rule !== undefined && !['Visit', 'Weekly', 'Calendar'].includes(streak_rule)) {
+        return res.status(400).json({ success: false, error: 'Select a valid streak rule.' });
+      }
+
       db.prepare(`
         UPDATE Settings 
         SET gym_name = COALESCE(?, gym_name),
@@ -232,7 +246,7 @@ class DashboardController {
         duplicate_scan_window_minutes
       );
 
-      logAudit(1, 'Owner', 'Update Gym Settings', 'Settings', 1, null, req.body);
+      logAudit(req.user.id, actorTypeForRole(req.user.role), 'Update Gym Settings', 'Settings', 1, null, req.body);
 
       const updated = db.prepare('SELECT * FROM Settings WHERE id = 1').get();
       return res.json({ success: true, message: 'Settings updated successfully', data: updated });

@@ -33,8 +33,7 @@ export default function FollowUpModal({ caseItem, onClose, onSuccess }) {
         channel,
         outcome,
         notes,
-        next_action_date: nextActionDate || null,
-        staff_id: 1
+        next_action_date: nextActionDate || null
       });
 
       if (res.success) {
