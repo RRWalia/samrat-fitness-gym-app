@@ -1,0 +1,26 @@
+{
+  "name": "samrat-fitness-gym-app",
+  "version": "1.0.0",
+  "description": "Gym Retention App - QR attendance, churn detection, renewal system, and add-on marketplace",
+  "main": "backend/server.js",
+  "scripts": {
+    "install:all": "npm install --prefix backend && npm install --prefix frontend/web",
+    "build:frontend": "cd frontend/web && npm install && npm run build",
+    "build": "npm run install:all && npm run build:frontend",
+    "start": "cd backend && node server.js",
+    "dev:backend": "cd backend && node server.js",
+    "dev:frontend": "cd frontend/web && npm run dev",
+    "seed": "cd backend && node src/config/seed.js",
+    "scan:noshow": "node scripts/automations/dailyNoShowScan.js",
+    "scan:renewals": "node scripts/automations/renewalReminders.js"
+  },
+  "keywords": [
+    "gym",
+    "retention",
+    "attendance",
+    "qr-code",
+    "renewals"
+  ],
+  "author": "RRWalia",
+  "license": "MIT"
+}
