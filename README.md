@@ -50,6 +50,8 @@ npm run dev:frontend      # Vite UI on port 3000
 
 `install:all` runs `npm ci --ignore-scripts`. Both native modules (`better-sqlite3`, `bcrypt`) ship prebuilt binaries for glibc *and* musl, so no C toolchain (`python3`/`make`/`g++`) is needed in the build image — keep `--ignore-scripts` in place, otherwise npm synthesises a `node-gyp rebuild` step for `better-sqlite3` and the deploy fails where a compiler is absent.
 
+The frontend install also passes `--include=dev`: `render.yaml` sets `NODE_ENV=production` service-wide, and with that set `npm ci` silently skips `devDependencies` — which is where all the build tooling lives (`vite`, `@vitejs/plugin-react`, `tailwindcss`). Without it, `vite` still arrives as an auto-installed peer of the production package `@tailwindcss/vite`, so the build starts and then dies with `ERR_MODULE_NOT_FOUND: Cannot find package '@vitejs/plugin-react'`. The backend needs no flag — it has no `devDependencies`.
+
 On a new **non-production** database, these demo accounts are created:
 
 | Role | User ID | Password |
