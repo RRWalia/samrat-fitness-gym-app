@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: samrat-fitness-gym-app
+    env: node
+    plan: free
+    region: singapore # Closest low-latency region to India
+    buildCommand: npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: GYM_NAME
+        value: "Samrat Fitness King"
+      - key: TIMEZONE
+        value: "Asia/Kolkata"
