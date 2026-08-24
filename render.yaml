@@ -4,20 +4,45 @@ services:
     env: node
     plan: free
     region: singapore # Closest low-latency region to India
+    branch: main
+    autoDeployTrigger: commit
     buildCommand: npm run build
     startCommand: npm start
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
-      - key: JWT_SECRET
-        generateValue: true
-      - key: INITIAL_OWNER_USERNAME
-        value: ashish
-      - key: INITIAL_OWNER_PASSWORD
-        sync: false
       - key: GYM_NAME
         value: "Samrat Fitness King"
       - key: TIMEZONE
         value: "Asia/Kolkata"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: INITIAL_OWNER_USERNAME
+        value: "ashish"
+      - key: INITIAL_OWNER_NAME
+        value: "Ashish"
+      - key: INITIAL_OWNER_PASSWORD
+        generateValue: true
+      - key: INITIAL_MANAGER_USERNAME
+        value: "parmar"
+      - key: INITIAL_MANAGER_NAME
+        value: "Parmar"
+      - key: INITIAL_MANAGER_PASSWORD
+        generateValue: true
+      - key: INITIAL_FRONT_DESK_USERNAME
+        value: "frontdesk"
+      - key: INITIAL_FRONT_DESK_NAME
+        value: "Front Desk Team"
+      - key: INITIAL_FRONT_DESK_PASSWORD
+        generateValue: true
+      - key: INITIAL_TRAINER_USERNAME
+        value: "sona.walia"
+      - key: INITIAL_TRAINER_NAME
+        value: "Sona Walia"
+      - key: INITIAL_TRAINER_ID
+        value: "101"
+      - key: INITIAL_TRAINER_PASSWORD
+        generateValue: true

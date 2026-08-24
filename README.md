@@ -55,7 +55,7 @@ On a new **non-production** database, these demo accounts are created:
 | Front Desk | `frontdesk` | `Desk@2026!Gym` |
 | Trainer — Sona Walia (Trainer ID 101) | `sona.walia` | `Trainer@2026!` |
 
-These defaults are never created automatically in production. Set a random `JWT_SECRET` (32+ characters) and `INITIAL_OWNER_PASSWORD` before the first production start; see `.env.example`. Additional accounts can then be created under **Management Dashboard → Staff Access**.
+These demo passwords are never created automatically in production. For a direct deployment, set a random `JWT_SECRET` (32+ characters) and the required `INITIAL_*_PASSWORD` values before the first production start; see `.env.example`. The Render Blueprint instead generates independent, high-entropy JWT and bootstrap passwords for all four staff roles—no production password is stored in Git. An authorized Render administrator can reveal/copy those generated `INITIAL_*_PASSWORD` values from the service's **Environment** page. Additional accounts can then be managed under **Management Dashboard → Staff Access**.
 
 Run the authentication/RBAC integration suite with:
 
