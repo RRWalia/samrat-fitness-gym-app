@@ -40,8 +40,7 @@ export default function RenewalModal({ memberId, memberName, onClose, onSuccess 
         member_id: memberId,
         plan_id: selectedPlanId,
         amount: selectedPlan.finalPayable,
-        payment_method: 'Razorpay UPI / Instant Simulation',
-        staff_id: 1
+        payment_method: 'Razorpay UPI / Instant Simulation'
       });
 
       if (res.success) {

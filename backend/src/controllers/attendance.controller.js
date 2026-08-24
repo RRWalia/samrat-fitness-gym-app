@@ -1,5 +1,18 @@
 const { db, logAudit } = require('../config/database');
+const { ROLES, actorTypeForRole } = require('../auth/roles');
 const crypto = require('crypto');
+
+function qrTokenForWindow(windowNumber) {
+  const raw = `SAMRAT_GYM_${windowNumber}`;
+  return `SFK_${crypto.createHash('sha256').update(raw).digest('hex').substring(0, 16)}`;
+}
+
+function isCurrentQrToken(token) {
+  if (typeof token !== 'string') return false;
+  const currentWindow = Math.floor(Date.now() / 15000);
+  // Permit the immediately previous rotation to account for a scan at the boundary.
+  return token === qrTokenForWindow(currentWindow) || token === qrTokenForWindow(currentWindow - 1);
+}
 
 class AttendanceController {
   /**
@@ -8,12 +21,11 @@ class AttendanceController {
   static getQrSession(req, res) {
     try {
       const timestamp = Date.now();
-      const raw = `SAMRAT_GYM_${Math.floor(timestamp / 15000)}`; // Rotates every 15 seconds
-      const token = crypto.createHash('sha256').update(raw).digest('hex').substring(0, 16);
-      
+      const token = qrTokenForWindow(Math.floor(timestamp / 15000));
+
       return res.json({
         success: true,
-        qrToken: `SFK_${token}`,
+        qrToken: token,
         expiresInSeconds: 15 - Math.floor((timestamp % 15000) / 1000),
         gymName: 'Samrat Fitness King'
       });
@@ -27,7 +39,20 @@ class AttendanceController {
    */
   static checkIn(req, res) {
     try {
-      const { member_id, phone, source = 'QR', qr_session, correction_reason, staff_actor_id } = req.body;
+      const { member_id, phone, source = 'QR', qr_session, correction_reason } = req.body;
+
+      if (!['QR', 'Assisted', 'Manual'].includes(source)) {
+        return res.status(400).json({ success: false, error: 'Invalid check-in source.' });
+      }
+      if (req.user.role === ROLES.FRONT_DESK && !['QR', 'Assisted'].includes(source)) {
+        return res.status(403).json({ success: false, error: 'Front desk accounts may record assisted or QR check-ins only.', code: 'FORBIDDEN' });
+      }
+      if (source === 'QR' && !isCurrentQrToken(qr_session)) {
+        return res.status(400).json({ success: false, error: 'This QR code is invalid or has expired. Please scan the current kiosk code.' });
+      }
+      if (source === 'Assisted' && (!correction_reason || String(correction_reason).trim().length < 3)) {
+        return res.status(400).json({ success: false, error: 'A reason is required for assisted check-in.' });
+      }
 
       let member;
       if (member_id) {
@@ -89,7 +114,7 @@ class AttendanceController {
       const attRes = db.prepare(`
         INSERT INTO Attendance (member_id, check_in_time, source, qr_session, correction_reason, staff_actor_id)
         VALUES (?, datetime('now', 'localtime'), ?, ?, ?, ?)
-      `).run(member.id, source, qr_session || 'SESSION_OK', correction_reason || null, staff_actor_id || null);
+      `).run(member.id, source, qr_session || 'ASSISTED', correction_reason || null, req.user.id);
 
       // Streak engine
       let streak = db.prepare('SELECT * FROM Streaks WHERE member_id = ?').get(member.id);
@@ -125,8 +150,8 @@ class AttendanceController {
 
         db.prepare(`
           INSERT INTO FollowUps (case_id, channel, outcome, notes, staff_id, timestamp)
-          VALUES (?, 'Call', 'Will return', 'Member returned and checked in successfully at gym gate!', 1, datetime('now', 'localtime'))
-        `).run(openCase.id);
+          VALUES (?, 'Call', 'Will return', 'Member returned and checked in successfully at gym gate!', ?, datetime('now', 'localtime'))
+        `).run(openCase.id, req.user.id);
 
         caseResolved = true;
       }
@@ -138,7 +163,7 @@ class AttendanceController {
         WHERE id = ?
       `).run(member.id);
 
-      logAudit(staff_actor_id || 1, source === 'QR' ? 'Member' : 'Staff', 'Gym Check-in', 'Attendance', attRes.lastInsertRowid, null, {
+      logAudit(req.user.id, actorTypeForRole(req.user.role), 'Gym Check-in', 'Attendance', attRes.lastInsertRowid, null, {
         memberName: member.name,
         source,
         streak: streak.current_value,
@@ -191,7 +216,8 @@ class AttendanceController {
       }
 
       query += ` ORDER BY a.check_in_time DESC LIMIT ? `;
-      params.push(Number(limit));
+      const safeLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 50));
+      params.push(safeLimit);
 
       const rows = db.prepare(query).all(...params);
       return res.json({ success: true, count: rows.length, data: rows });

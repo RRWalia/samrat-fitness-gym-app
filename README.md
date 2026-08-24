@@ -26,6 +26,45 @@ Record Attendance ➔ Detect Risk ➔ Contact Early ➔ Bring Member Back ➔ Co
 
 ---
 
+## 🔐 Staff Authentication & Role-Based Access
+
+The staff web app now starts at a secure User ID/password portal. Passwords are stored only as bcrypt hashes, successful logins receive short-lived signed JWTs, and every JWT must also map to a live server-side session. Logout, password reset, account deactivation, or a role change revokes access immediately.
+
+| Staff role | Server-enforced access |
+| :--- | :--- |
+| **Owner / Manager** | Full dashboard, financial metrics, member records, renewals, settings, audit trail, and staff access management |
+| **Front Desk** | Rotating QR kiosk, assisted check-in, recent attendance, and a redacted member lookup; financial and settings APIs return `403` |
+| **Trainer** | Only PT orders and member profiles assigned to that account's `trainer_id`; prices and unrelated customers are omitted |
+
+Every `/api/*` business route requires `Authorization: Bearer <token>`. Only `/api/auth/login` and the metadata-only `/api/health` probe are public. JWTs contain no customer or payment data; HTTPS encrypts them in transit in production.
+
+### Local development
+
+```bash
+npm run install:all
+npm run dev:backend       # API + SQLite on port 5001
+npm run dev:frontend      # Vite UI on port 3000
+```
+
+On a new **non-production** database, these demo accounts are created:
+
+| Role | User ID | Password |
+| :--- | :--- | :--- |
+| Owner | `Ashish` | `Owner@2026!Gym` |
+| Manager | `Parmar` | `Manager@2026!` |
+| Front Desk | `frontdesk` | `Desk@2026!Gym` |
+| Trainer — Sona Walia (Trainer ID 101) | `sona.walia` | `Trainer@2026!` |
+
+These defaults are never created automatically in production. Set a random `JWT_SECRET` (32+ characters) and `INITIAL_OWNER_PASSWORD` before the first production start; see `.env.example`. Additional accounts can then be created under **Management Dashboard → Staff Access**.
+
+Run the authentication/RBAC integration suite with:
+
+```bash
+cd backend && npm test
+```
+
+---
+
 ## 🎯 Core Features
 
 ### 1. No-show Red List 📛
@@ -68,10 +107,10 @@ Record Attendance ➔ Detect Risk ➔ Contact Early ➔ Bring Member Back ➔ Co
 
 | Role | Access | Key Actions |
 | :--- | :--- | :--- |
-| **Member** | Mobile App | QR check-in, view streak, renew, browse add-ons, notification preferences |
-| **Owner / Manager** | Web + Mobile | View dashboard, manage members/plans, configure add-ons, see red-list |
-| **Front-desk** | Web / Tablet | Member lookup, assisted check-in, payment confirmation, record call outcomes |
-| **Trainer** | Mobile | View assigned members, update PT usage, (optional) add workout notes |
+| **Member** | Mobile App Simulator (management only) | QR check-in, view streak, renew, browse add-ons, notification preferences |
+| **Owner / Manager** | Web | Full dashboard, financials, members/plans, settings, staff credentials, and audit logs |
+| **Front Desk** | Web / Tablet | Redacted member lookup, rotating QR kiosk, assisted check-in, and recent gate activity only |
+| **Trainer** | Web / Mobile | View only assigned PT clients and update their PT session usage |
 
 ---
 
@@ -80,6 +119,32 @@ Record Attendance ➔ Detect Risk ➔ Contact Early ➔ Bring Member Back ➔ Co
 ### Core Tables (MySQL / PostgreSQL)
 
 ```sql
+-- Staff authentication (actual SQLite implementation)
+CREATE TABLE Users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+  password_hash TEXT NOT NULL,
+  full_name TEXT NOT NULL,
+  role TEXT NOT NULL CHECK(role IN ('owner', 'manager', 'front_desk', 'trainer')),
+  trainer_id INTEGER,
+  active INTEGER NOT NULL DEFAULT 1,
+  failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+  locked_until TEXT,
+  token_version INTEGER NOT NULL DEFAULT 0,
+  last_login_at TEXT
+);
+
+CREATE TABLE AuthSessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  jti_hash TEXT NOT NULL UNIQUE,
+  remember_me INTEGER NOT NULL DEFAULT 0,
+  issued_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  revoked_at TEXT,
+  FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+);
+
 -- 1. Members
 CREATE TABLE Members (
   id INT PRIMARY KEY AUTO_INCREMENT,

@@ -2,15 +2,53 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
-const dbPath = path.resolve(__dirname, '../../gym.db');
+const configuredPath = process.env.DB_PATH;
+const dbPath = configuredPath
+  ? path.resolve(process.cwd(), configuredPath)
+  : path.resolve(__dirname, '../../gym.db');
+
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 const db = new Database(dbPath);
 
-// Enable foreign keys and WAL mode for high performance and integrity
+// Enable referential integrity and WAL for concurrent reads.
 db.pragma('foreign_keys = ON');
 db.pragma('journal_mode = WAL');
+db.pragma('busy_timeout = 5000');
 
 function initDatabase() {
   db.exec(`
+    -- Staff identities. Passwords are stored only as adaptive bcrypt hashes.
+    CREATE TABLE IF NOT EXISTS Users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+      password_hash TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      role TEXT NOT NULL CHECK(role IN ('owner', 'manager', 'front_desk', 'trainer')),
+      trainer_id INTEGER,
+      active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
+      failed_login_attempts INTEGER NOT NULL DEFAULT 0,
+      locked_until TEXT,
+      token_version INTEGER NOT NULL DEFAULT 0,
+      password_changed_at TEXT DEFAULT (datetime('now')),
+      last_login_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    -- Server-side JWT session registry. Only a SHA-256 digest of the JWT ID is retained.
+    CREATE TABLE IF NOT EXISTS AuthSessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      jti_hash TEXT NOT NULL UNIQUE,
+      remember_me INTEGER NOT NULL DEFAULT 0 CHECK(remember_me IN (0, 1)),
+      issued_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      last_seen_at TEXT,
+      user_agent TEXT,
+      FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE
+    );
+
     -- 1. Members
     CREATE TABLE IF NOT EXISTS Members (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -202,9 +240,14 @@ function initDatabase() {
       after_summary TEXT,
       timestamp TEXT DEFAULT (datetime('now', 'localtime'))
     );
+
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON AuthSessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_expiry ON AuthSessions(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_members_trainer ON Members(assigned_trainer_id);
+    CREATE INDEX IF NOT EXISTS idx_attendance_member_time ON Attendance(member_id, check_in_time DESC);
+    CREATE INDEX IF NOT EXISTS idx_addon_orders_trainer ON AddOnOrders(trainer_product_id);
   `);
 
-  // Ensure default settings exist
   const existingSettings = db.prepare('SELECT id FROM Settings LIMIT 1').get();
   if (!existingSettings) {
     db.prepare(`
@@ -220,11 +263,11 @@ function logAudit(actorId, actorType, action, recordType, recordId, beforeSummar
       INSERT INTO AuditLogs (actor_id, actor_type, action, record_type, record_id, before_summary, after_summary)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
-      actorId || 1,
+      actorId ?? null,
       actorType || 'System',
       action,
       recordType,
-      recordId,
+      recordId || 0,
       beforeSummary ? JSON.stringify(beforeSummary) : null,
       afterSummary ? JSON.stringify(afterSummary) : null
     );
@@ -235,6 +278,7 @@ function logAudit(actorId, actorType, action, recordType, recordId, beforeSummar
 
 module.exports = {
   db,
+  dbPath,
   initDatabase,
   logAudit
 };

@@ -33,8 +33,7 @@ export default function FollowUpModal({ caseItem, onClose, onSuccess }) {
         channel,
         outcome,
         notes,
-        next_action_date: nextActionDate || null,
-        staff_id: 1
+        next_action_date: nextActionDate || null
       });
 
       if (res.success) {
@@ -166,7 +165,7 @@ export default function FollowUpModal({ caseItem, onClose, onSuccess }) {
               rows={3}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Member had back spasm; offered free stretching session with Coach Aryan..."
+              placeholder="e.g. Member had back spasm; offered free stretching session with Sona Walia..."
               className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500"
             />
           </div>

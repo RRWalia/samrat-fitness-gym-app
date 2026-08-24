@@ -1,4 +1,5 @@
 const { db, logAudit } = require('../config/database');
+const { actorTypeForRole } = require('../auth/roles');
 const AutomationService = require('../services/automation.service');
 
 class RedListController {
@@ -72,7 +73,8 @@ class RedListController {
    */
   static recordFollowUp(req, res) {
     try {
-      const { case_id, channel, outcome, notes, staff_id = 1, next_action_date } = req.body;
+      const { case_id, channel, outcome, notes, next_action_date } = req.body;
+      const staff_id = req.user.id;
 
       if (!case_id || !channel || !outcome) {
         return res.status(400).json({ error: 'Missing required follow-up fields: case_id, channel, outcome.' });
@@ -104,7 +106,7 @@ class RedListController {
         WHERE id = ?
       `).run(newStatus, next_action_date || null, case_id);
 
-      logAudit(staff_id, 'Staff', 'Record No-Show Follow-up', 'NoShowCases', case_id, { status: gymCase.status }, {
+      logAudit(staff_id, actorTypeForRole(req.user.role), 'Record No-Show Follow-up', 'NoShowCases', case_id, { status: gymCase.status }, {
         status: newStatus,
         channel,
         outcome,

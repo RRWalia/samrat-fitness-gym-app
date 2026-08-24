@@ -44,8 +44,9 @@ import RenewalModal from './RenewalModal';
 import ReceiptModal from './ReceiptModal';
 import DailySummaryModal from './DailySummaryModal';
 import NewMemberModal from './NewMemberModal';
+import StaffAccessPanel from './StaffAccessPanel';
 
-export default function OwnerDashboard({ onSwitchToMember }) {
+export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
   const [stats, setStats] = useState(null);
   const [activeTab, setActiveTab] = useState('redlist'); // 'redlist', 'renewals', 'addons', 'attendance', 'members', 'audit', 'settings'
   
@@ -147,6 +148,20 @@ export default function OwnerDashboard({ onSwitchToMember }) {
       }
     } catch (err) {
       showToast('Error updating status');
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    try {
+      const result = await updateSettings(gymSettings);
+      if (result.success) {
+        setGymSettings(result.data);
+        showToast('Settings saved successfully');
+      } else {
+        showToast(result.error || 'Unable to save settings');
+      }
+    } catch {
+      showToast('Unable to save settings');
     }
   };
 
@@ -355,6 +370,7 @@ export default function OwnerDashboard({ onSwitchToMember }) {
             { id: 'attendance', label: '⚡ Live Attendance Stream', count: attendance.length },
             { id: 'members', label: '👥 Member Directory', count: members.length },
             { id: 'audit', label: '📜 Audit Logs', count: auditLogs.length },
+            { id: 'access', label: '🛡️ Staff Access' },
             { id: 'settings', label: '⚙️ Settings' }
           ].map((tab) => (
             <button
@@ -819,7 +835,12 @@ export default function OwnerDashboard({ onSwitchToMember }) {
             </div>
           )}
 
-          {/* TAB 7: SETTINGS */}
+          {/* TAB 7: STAFF ACCESS */}
+          {activeTab === 'access' && (
+            <StaffAccessPanel currentUser={currentUser} />
+          )}
+
+          {/* TAB 8: SETTINGS */}
           {activeTab === 'settings' && gymSettings && (
             <div className="max-w-2xl space-y-4 text-xs">
               <h3 className="text-sm font-bold text-white mb-3">Gym Retention Configuration</h3>
@@ -829,7 +850,8 @@ export default function OwnerDashboard({ onSwitchToMember }) {
                   <label className="block text-slate-400 font-semibold mb-1">Gym Name</label>
                   <input
                     type="text"
-                    defaultValue={gymSettings.gym_name}
+                    value={gymSettings.gym_name || ''}
+                    onChange={(event) => setGymSettings({ ...gymSettings, gym_name: event.target.value })}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
                   />
                 </div>
@@ -837,7 +859,10 @@ export default function OwnerDashboard({ onSwitchToMember }) {
                   <label className="block text-slate-400 font-semibold mb-1">No-Show Risk Threshold (Days)</label>
                   <input
                     type="number"
-                    defaultValue={gymSettings.no_show_threshold}
+                    min="1"
+                    max="90"
+                    value={gymSettings.no_show_threshold}
+                    onChange={(event) => setGymSettings({ ...gymSettings, no_show_threshold: Number(event.target.value) })}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white font-mono"
                   />
                 </div>
@@ -845,14 +870,18 @@ export default function OwnerDashboard({ onSwitchToMember }) {
                   <label className="block text-slate-400 font-semibold mb-1">Duplicate Scan Window (Mins)</label>
                   <input
                     type="number"
-                    defaultValue={gymSettings.duplicate_scan_window_minutes}
+                    min="1"
+                    max="240"
+                    value={gymSettings.duplicate_scan_window_minutes}
+                    onChange={(event) => setGymSettings({ ...gymSettings, duplicate_scan_window_minutes: Number(event.target.value) })}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white font-mono"
                   />
                 </div>
                 <div>
                   <label className="block text-slate-400 font-semibold mb-1">Streak Rule</label>
                   <select
-                    defaultValue={gymSettings.streak_rule}
+                    value={gymSettings.streak_rule}
+                    onChange={(event) => setGymSettings({ ...gymSettings, streak_rule: event.target.value })}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2.5 text-white"
                   >
                     <option value="Weekly">Weekly Goal (4 of 4 visits)</option>
@@ -864,7 +893,7 @@ export default function OwnerDashboard({ onSwitchToMember }) {
 
               <div className="pt-4 border-t border-slate-800">
                 <button
-                  onClick={() => showToast('Settings saved successfully')}
+                  onClick={handleSaveSettings}
                   className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs"
                 >
                   Save Configuration

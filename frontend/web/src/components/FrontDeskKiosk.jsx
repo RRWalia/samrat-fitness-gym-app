@@ -1,20 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Building2, 
-  QrCode, 
-  UserCheck, 
-  Clock, 
-  Search, 
-  CheckCircle2, 
-  AlertCircle, 
-  Sparkles, 
-  ShieldCheck,
-  RefreshCw 
+import {
+  Building2,
+  QrCode,
+  UserCheck,
+  CheckCircle2,
+  AlertCircle,
+  ShieldCheck
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { fetchQrSession, performCheckIn, fetchMembers, fetchAttendanceHistory } from '../api';
 
-export default function FrontDeskKiosk() {
+export default function FrontDeskKiosk({ currentUser }) {
   const [qrToken, setQrToken] = useState('SFK_INIT');
   const [timeLeft, setTimeLeft] = useState(15);
   const [members, setMembers] = useState([]);
@@ -52,7 +48,18 @@ export default function FrontDeskKiosk() {
   };
 
   useEffect(() => {
-    loadData();
+    let active = true;
+    Promise.all([fetchMembers(), fetchAttendanceHistory({ limit: 10 })])
+      .then(([memRes, attRes]) => {
+        if (!active) return;
+        if (memRes.success) {
+          setMembers(memRes.data);
+          if (memRes.data.length > 0) setSelectedMemberId(memRes.data[0].id);
+        }
+        if (attRes.success) setRecentScans(attRes.data);
+      })
+      .catch(error => console.error('Unable to load front-desk data:', error));
+    return () => { active = false; };
   }, []);
 
   // Dynamic QR generator rotation
@@ -85,15 +92,14 @@ export default function FrontDeskKiosk() {
       const res = await performCheckIn({
         member_id: Number(selectedMemberId),
         source: 'Assisted',
-        correction_reason: finalReason,
-        staff_actor_id: 1
+        correction_reason: finalReason
       });
 
       if (res.success) {
         setSuccessMsg(res.message);
         try {
           confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
-        } catch (e) {}
+        } catch {}
         loadData();
       } else {
         setErrorMsg(res.error || 'Assisted check-in failed');
@@ -117,7 +123,7 @@ export default function FrontDeskKiosk() {
           <div>
             <h2 className="text-base font-bold text-white">Front-Desk Gate Terminal & Assisted Check-In</h2>
             <p className="text-xs text-slate-400">
-              Samrat Fitness King • Entrance Kiosk Mode • Session-Bound QR Code
+              Restricted workspace • Check-in and assisted member lookup only • Financial data hidden
             </p>
           </div>
         </div>
@@ -126,7 +132,7 @@ export default function FrontDeskKiosk() {
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
           <span className="text-slate-300">Kiosk Active</span>
           <span className="text-slate-500">|</span>
-          <span className="font-mono text-amber-400">Staff ID #1 (Front Desk)</span>
+          <span className="font-mono text-amber-400">{currentUser?.fullName || 'Front Desk'} · ID #{currentUser?.id}</span>
         </div>
       </div>
 

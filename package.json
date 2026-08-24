@@ -12,7 +12,8 @@
     "dev:frontend": "cd frontend/web && npm run dev",
     "seed": "cd backend && node src/config/seed.js",
     "scan:noshow": "node scripts/automations/dailyNoShowScan.js",
-    "scan:renewals": "node scripts/automations/renewalReminders.js"
+    "scan:renewals": "node scripts/automations/renewalReminders.js",
+    "test": "npm test --prefix backend && npm run build --prefix frontend/web"
   },
   "keywords": [
     "gym",

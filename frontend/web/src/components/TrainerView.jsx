@@ -1,30 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Dumbbell, 
-  UserCheck, 
-  CheckCircle2, 
-  Flame, 
-  Clock, 
-  FileText, 
-  Sparkles,
-  Award 
-} from 'lucide-react';
+import { Dumbbell, CheckCircle2 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { fetchActiveAddonOrders, logPtUsage } from '../api';
 
-export default function TrainerView() {
-  const [trainer, setTrainer] = useState('Coach Aryan');
+export default function TrainerView({ currentUser }) {
   const [orders, setOrders] = useState([]);
   const [loggingId, setLoggingId] = useState(null);
   const [notes, setNotes] = useState('');
   const [activeModalOrder, setActiveModalOrder] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
-
-  const trainers = [
-    { id: '101', name: 'Coach Aryan', qual: 'ACE Certified Personal Trainer • 6+ Yrs Exp' },
-    { id: '102', name: 'Coach Priya', qual: 'K11 Master Trainer • Functional & Fat Loss Spec' },
-    { id: '103', name: 'Dietitian Rahul', qual: 'Registered Clinical & Sports Nutritionist' }
-  ];
 
   const loadOrders = async () => {
     const res = await fetchActiveAddonOrders();
@@ -34,7 +18,15 @@ export default function TrainerView() {
   };
 
   useEffect(() => {
-    loadOrders();
+    let active = true;
+    fetchActiveAddonOrders()
+      .then(res => {
+        if (active && res.success) setOrders(res.data);
+      })
+      .catch(error => {
+        if (active) console.error('Unable to load assigned PT clients:', error);
+      });
+    return () => { active = false; };
   }, []);
 
   const handleLogSession = async (e) => {
@@ -45,15 +37,14 @@ export default function TrainerView() {
     try {
       const res = await logPtUsage({
         order_id: activeModalOrder.id,
-        notes: notes || 'Strength & Hypertrophy workout completed with trainer.',
-        staff_id: 101
+        notes: notes || 'Strength & Hypertrophy workout completed with trainer.'
       });
 
       if (res.success) {
         setSuccessMsg(res.message);
         try {
           confetti({ particleCount: 50, spread: 60 });
-        } catch (e) {}
+        } catch {}
         setActiveModalOrder(null);
         setNotes('');
         loadOrders();
@@ -82,20 +73,14 @@ export default function TrainerView() {
           </div>
         </div>
 
-        {/* Trainer Selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-slate-400">Logged in as:</span>
-          <select
-            value={trainer}
-            onChange={(e) => setTrainer(e.target.value)}
-            className="bg-slate-800 border border-slate-700 text-purple-300 font-semibold text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-purple-500"
-          >
-            {trainers.map(t => (
-              <option key={t.id} value={t.name} className="bg-slate-900 text-slate-200">
-                {t.name}
-              </option>
-            ))}
-          </select>
+        <div className="rounded-xl border border-purple-500/20 bg-purple-500/10 px-3.5 py-2 text-right">
+          <span className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+            {currentUser?.role === 'trainer' ? 'Authenticated trainer' : 'Management preview'}
+          </span>
+          <span className="block text-xs font-bold text-purple-300">{currentUser?.fullName}</span>
+          <span className="block text-[10px] text-slate-500">
+            {currentUser?.role === 'trainer' ? `Trainer ID #${currentUser.trainerId} · Assigned clients only` : 'All PT packages visible'}
+          </span>
         </div>
       </div>
 
