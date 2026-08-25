@@ -25,6 +25,7 @@ function initDatabase() {
       full_name TEXT NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('owner', 'manager', 'front_desk', 'trainer')),
       trainer_id INTEGER,
+      phone TEXT,
       active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
       failed_login_attempts INTEGER NOT NULL DEFAULT 0,
       locked_until TEXT,
@@ -247,6 +248,15 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_attendance_member_time ON Attendance(member_id, check_in_time DESC);
     CREATE INDEX IF NOT EXISTS idx_addon_orders_trainer ON AddOnOrders(trainer_product_id);
   `);
+
+  // Idempotent migration for databases created before staff accounts
+  // could store a mobile number (used for login + recovery identification).
+  const userColumns = db.prepare('PRAGMA table_info(Users)').all().map(col => col.name);
+  if (!userColumns.includes('phone')) {
+    db.exec('ALTER TABLE Users ADD COLUMN phone TEXT');
+  }
+  // Runs after the migration so pre-existing databases can build the index too.
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON Users(phone) WHERE phone IS NOT NULL');
 
   const existingSettings = db.prepare('SELECT id FROM Settings LIMIT 1').get();
   if (!existingSettings) {

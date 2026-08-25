@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { db, logAudit } = require('../config/database');
 const { validatePassword, bcryptRounds } = require('../auth/password');
+const { normalizePhone, maskPhone } = require('../auth/phone');
 const { actorTypeForRole } = require('../auth/roles');
 const {
   JWT_ISSUER,
@@ -36,20 +37,33 @@ function genericLoginFailure(res) {
   });
 }
 
+// Staff can sign in with their User ID or their registered mobile number.
+// Usernames are checked first so digit-heavy User IDs keep working.
+function findStaffByIdentifier(identifier) {
+  const value = String(identifier || '').trim();
+  if (!value) return undefined;
+  let user = db.prepare('SELECT * FROM Users WHERE username = ? COLLATE NOCASE LIMIT 1').get(value.toLowerCase());
+  if (!user) {
+    const phone = normalizePhone(value);
+    if (phone) user = db.prepare('SELECT * FROM Users WHERE phone = ? LIMIT 1').get(phone);
+  }
+  return user;
+}
+
 class AuthController {
   static async login(req, res) {
     res.set('Cache-Control', 'no-store');
-    const username = typeof req.body?.username === 'string' ? req.body.username.trim().toLowerCase() : '';
+    const identifier = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     const rememberMe = req.body?.rememberMe === true;
 
     // Strict bounds prevent oversized bcrypt work and malformed identifiers.
-    if (!username || username.length > 40 || !password || password.length > 128) {
+    if (!identifier || identifier.length > 40 || !password || password.length > 128) {
       await bcrypt.compare('invalid', DUMMY_HASH);
       return genericLoginFailure(res);
     }
 
-    const user = db.prepare('SELECT * FROM Users WHERE username = ? COLLATE NOCASE LIMIT 1').get(username);
+    const user = findStaffByIdentifier(identifier);
     const passwordMatches = await bcrypt.compare(password, user?.password_hash || DUMMY_HASH);
     const now = Date.now();
     const isLocked = Boolean(user?.locked_until && Date.parse(user.locked_until) > now);
@@ -143,6 +157,49 @@ class AuthController {
       success: true,
       expiresAt: req.auth.expiresAt,
       user: req.user
+    });
+  }
+
+  // Pre-login recovery step: verifies which staff account an identifier
+  // belongs to so the person (or the front desk) can confirm the right
+  // account before an administrator resets the password from Staff Access.
+  // No password or credential data is ever returned.
+  static forgotPassword(req, res) {
+    res.set('Cache-Control', 'no-store');
+    const identifier = typeof req.body?.identifier === 'string' ? req.body.identifier.trim() : '';
+    if (!identifier || identifier.length > 40) {
+      return res.status(400).json({
+        success: false,
+        error: 'Enter your User ID or registered mobile number.'
+      });
+    }
+
+    const user = findStaffByIdentifier(identifier);
+    if (!user || !user.active) {
+      return res.json({
+        success: true,
+        found: false,
+        message: 'We could not find an active staff account with that User ID or mobile number.'
+      });
+    }
+
+    logAudit(null, 'System', 'Password Recovery Request', 'Users', user.id, null, {
+      username: user.username,
+      hasRecoveryMobile: Boolean(user.phone)
+    });
+
+    return res.json({
+      success: true,
+      found: true,
+      message: Boolean(user.phone)
+        ? 'Recovery mobile verified. Your gym administrator can now reset this password immediately.'
+        : 'This account has no recovery mobile on file. Your gym administrator can still reset this password.',
+      account: {
+        fullName: user.full_name,
+        username: user.username,
+        phoneMasked: maskPhone(user.phone),
+        hasRecoveryMobile: Boolean(user.phone)
+      }
     });
   }
 

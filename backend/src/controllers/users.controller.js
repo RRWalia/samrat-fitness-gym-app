@@ -2,6 +2,7 @@ const bcrypt = require('bcrypt');
 const { db, logAudit } = require('../config/database');
 const { ALL_ROLES, actorTypeForRole } = require('../auth/roles');
 const { validateUsername, validatePassword, bcryptRounds } = require('../auth/password');
+const { normalizePhone, validatePhone } = require('../auth/phone');
 const { revokeAllUserSessions } = require('../middleware/auth.middleware');
 
 function serializeUser(user) {
@@ -11,6 +12,7 @@ function serializeUser(user) {
     fullName: user.full_name,
     role: user.role,
     trainerId: user.trainer_id ?? null,
+    phone: user.phone ?? null,
     active: Boolean(user.active),
     failedLoginAttempts: user.failed_login_attempts,
     lockedUntil: user.locked_until,
@@ -38,7 +40,7 @@ function isLastActiveOwner(userId) {
 class UsersController {
   static list(req, res) {
     const users = db.prepare(`
-      SELECT u.id, u.username, u.full_name, u.role, u.trainer_id, u.active,
+      SELECT u.id, u.username, u.full_name, u.role, u.trainer_id, u.phone, u.active,
              u.failed_login_attempts, u.locked_until, u.last_login_at, u.created_at,
              COUNT(s.id) AS active_sessions
       FROM Users u
@@ -57,32 +59,39 @@ class UsersController {
     const password = typeof req.body?.password === 'string' ? req.body.password : '';
     const role = req.body?.role;
     const trainerId = role === 'trainer' ? Number(req.body?.trainerId) : null;
+    const rawPhone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
 
     const usernameError = validateUsername(username);
     const passwordError = validatePassword(password);
     const trainerError = validateTrainerLink(role, trainerId);
-    if (usernameError || passwordError || trainerError || !fullName || fullName.length > 100 || !ALL_ROLES.includes(role)) {
+    const phoneError = validatePhone(rawPhone);
+    const phone = rawPhone ? normalizePhone(rawPhone) : null;
+    if (usernameError || passwordError || trainerError || phoneError || !fullName || fullName.length > 100 || !ALL_ROLES.includes(role)) {
       return res.status(400).json({
         success: false,
-        error: usernameError || passwordError || trainerError ||
+        error: usernameError || passwordError || trainerError || phoneError ||
           (!ALL_ROLES.includes(role) ? 'Select a valid staff role.' : 'Full name is required and must be under 100 characters.')
       });
     }
 
     const existing = db.prepare('SELECT id FROM Users WHERE username = ? COLLATE NOCASE').get(username);
     if (existing) return res.status(409).json({ success: false, error: 'That username is already in use.' });
+    if (phone && db.prepare('SELECT id FROM Users WHERE phone = ?').get(phone)) {
+      return res.status(409).json({ success: false, error: 'That mobile number is already linked to another staff account.' });
+    }
 
     const passwordHash = await bcrypt.hash(password, bcryptRounds());
     const result = db.prepare(`
-      INSERT INTO Users (username, password_hash, full_name, role, trainer_id, active)
-      VALUES (?, ?, ?, ?, ?, 1)
-    `).run(username, passwordHash, fullName, role, trainerId);
+      INSERT INTO Users (username, password_hash, full_name, role, trainer_id, phone, active)
+      VALUES (?, ?, ?, ?, ?, ?, 1)
+    `).run(username, passwordHash, fullName, role, trainerId, phone);
 
     logAudit(req.user.id, actorTypeForRole(req.user.role), 'Create Staff User', 'Users', result.lastInsertRowid, null, {
       username,
       fullName,
       role,
-      trainerId
+      trainerId,
+      phone
     });
 
     const created = db.prepare('SELECT * FROM Users WHERE id = ?').get(result.lastInsertRowid);
@@ -100,6 +109,21 @@ class UsersController {
     const trainerId = role === 'trainer'
       ? Number(req.body.trainerId === undefined ? existing.trainer_id : req.body.trainerId)
       : null;
+
+    let phone = existing.phone ?? null;
+    if (req.body.phone !== undefined) {
+      const rawPhone = typeof req.body.phone === 'string' ? req.body.phone.trim() : '';
+      if (!rawPhone) {
+        phone = null;
+      } else {
+        const phoneError = validatePhone(rawPhone);
+        if (phoneError) return res.status(400).json({ success: false, error: phoneError });
+        phone = normalizePhone(rawPhone);
+      }
+    }
+    if (phone && db.prepare('SELECT id FROM Users WHERE phone = ? AND id != ?').get(phone, userId)) {
+      return res.status(409).json({ success: false, error: 'That mobile number is already linked to another staff account.' });
+    }
 
     if (!fullName || fullName.length > 100) {
       return res.status(400).json({ success: false, error: 'Full name is required and must be under 100 characters.' });
@@ -126,7 +150,7 @@ class UsersController {
     const transaction = db.transaction(() => {
       db.prepare(`
         UPDATE Users
-        SET full_name = ?, role = ?, trainer_id = ?, active = ?,
+        SET full_name = ?, role = ?, trainer_id = ?, phone = ?, active = ?,
             token_version = token_version + ?,
             failed_login_attempts = CASE WHEN ? = 1 THEN 0 ELSE failed_login_attempts END,
             locked_until = CASE WHEN ? = 1 THEN NULL ELSE locked_until END,
@@ -136,6 +160,7 @@ class UsersController {
         fullName,
         role,
         trainerId,
+        phone,
         active ? 1 : 0,
         securityScopeChanged ? 1 : 0,
         active ? 1 : 0,
@@ -151,8 +176,9 @@ class UsersController {
       fullName: existing.full_name,
       role: existing.role,
       trainerId: existing.trainer_id,
+      phone: existing.phone,
       active: Boolean(existing.active)
-    }, { fullName, role, trainerId, active });
+    }, { fullName, role, trainerId, phone, active });
 
     const updated = db.prepare('SELECT * FROM Users WHERE id = ?').get(userId);
     return res.json({ success: true, message: 'Staff access updated.', data: serializeUser(updated) });

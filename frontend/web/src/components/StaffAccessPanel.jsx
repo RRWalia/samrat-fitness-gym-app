@@ -24,9 +24,16 @@ const emptyForm = {
   fullName: '',
   username: '',
   password: '',
+  phone: '',
   role: 'front_desk',
   trainerId: ''
 };
+
+function formatPhone(phone) {
+  if (!phone) return null;
+  if (/^\+91\d{10}$/.test(phone)) return `+91 ${phone.slice(3, 8)} ${phone.slice(8)}`;
+  return phone;
+}
 
 export default function StaffAccessPanel({ currentUser }) {
   const [users, setUsers] = useState([]);
@@ -199,6 +206,18 @@ export default function StaffAccessPanel({ currentUser }) {
               />
             </label>
             <label className="text-[11px] font-semibold text-slate-400">
+              Mobile number (optional)
+              <input
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                value={form.phone}
+                onChange={event => setForm({ ...form, phone: event.target.value })}
+                className="mt-1.5 w-full rounded-xl border border-slate-700 bg-slate-900 p-2.5 text-xs text-white outline-none focus:border-amber-400/60"
+                placeholder="e.g. 98250 11223 — enables mobile login"
+              />
+            </label>
+            <label className="text-[11px] font-semibold text-slate-400">
               Access role
               <select
                 value={form.role}
@@ -279,7 +298,9 @@ export default function StaffAccessPanel({ currentUser }) {
               <tr key={user.id} className="hover:bg-slate-800/30">
                 <td className="px-4 py-3.5">
                   <p className="font-bold text-white">{user.fullName} {user.id === currentUser.id && <span className="text-[9px] text-amber-300">(you)</span>}</p>
-                  <p className="mt-0.5 font-mono text-[10px] text-slate-500">@{user.username}</p>
+                  <p className="mt-0.5 font-mono text-[10px] text-slate-500">
+                    @{user.username}{user.phone && <span className="text-slate-600"> · {formatPhone(user.phone)}</span>}
+                  </p>
                 </td>
                 <td className="px-4 py-3.5">
                   <span className="rounded-lg border border-slate-700 bg-slate-800 px-2 py-1 text-[10px] font-bold text-slate-300">{roleLabels[user.role]}</span>

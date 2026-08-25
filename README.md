@@ -36,7 +36,25 @@ The staff web app now starts at a secure User ID/password portal. Passwords are 
 | **Front Desk** | Rotating QR kiosk, assisted check-in, recent attendance, and a redacted member lookup; financial and settings APIs return `403` |
 | **Trainer** | Only PT orders and member profiles assigned to that account's `trainer_id`; prices and unrelated customers are omitted |
 
-Every `/api/*` business route requires `Authorization: Bearer <token>`. Only `/api/auth/login` and the metadata-only `/api/health` probe are public. JWTs contain no customer or payment data; HTTPS encrypts them in transit in production.
+Every `/api/*` business route requires `Authorization: Bearer <token>`. Only `/api/auth/login`, the pre-login `/api/auth/forgot-password` lookup and the metadata-only `/api/health` probe are public. JWTs contain no customer or payment data; HTTPS encrypts them in transit in production.
+
+### Mobile-number sign-in & password recovery
+
+* Staff can sign in with their **User ID or their registered mobile number** (`98250 11223`, `+91 98250 11223` and `919825011223` all match). Numbers are stored normalised (`+91…`) and are unique per staff account.
+* Register a mobile when creating a staff account (**Staff Access → Add Staff User**) or from the account menu in the header (**Set / Update mobile number**).
+* The login page offers **Forgot password?**: it identifies the matching account by User ID or mobile (name + masked number only, no credential data) and points to the one-click administrator reset in **Staff Access**. No OTP is sent automatically — this deployment is not connected to an SMS/email provider; the API shape is ready to wire one in later.
+* **Locked out of the owner account?** The production owner password is the Render-generated `INITIAL_OWNER_PASSWORD` (see *Lockout recovery* below) — the demo password in this README only applies to fresh non-production databases.
+
+### Lockout recovery (server shell)
+
+If the owner password is lost (for example the Render-generated `INITIAL_OWNER_PASSWORD` was never saved), reset it from the service's shell without knowing the current password:
+
+```bash
+# Render: service → Web Service → "Shell" (or any host with the app's DB)
+node scripts/resetOwnerPassword.js --username ashish --password 'Ashish@samrat1!'
+```
+
+The script validates the new password against the security policy, rewrites the bcrypt hash, bumps `token_version`, revokes every active session for that account, and writes an audit-log entry. Confirm the target User ID when prompted (or pass `--yes` for non-interactive runs).
 
 ### Local development
 
