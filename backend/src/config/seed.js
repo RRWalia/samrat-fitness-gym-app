@@ -51,15 +51,17 @@ function resolveOwnerPassword(username, isProduction) {
   return generateOwnerBootstrapPassword(username);
 }
 
-function seedAuthUsers() {
-  const userCount = db.prepare('SELECT COUNT(*) AS count FROM Users').get().count;
-  if (userCount > 0) return;
-
+// Shared definition of the four role accounts and where their values come from.
+// resolveOwner=true allows the first-run bootstrap fallback (generated password);
+// the password-sync path passes false so it only ever uses an explicit env value.
+function buildStaffCandidates({ resolveOwner = false } = {}) {
   const isProduction = process.env.NODE_ENV === 'production';
   const ownerUsername = process.env.INITIAL_OWNER_USERNAME || 'ashish';
-  const ownerPassword = resolveOwnerPassword(ownerUsername, isProduction);
+  const ownerPassword = resolveOwner
+    ? resolveOwnerPassword(ownerUsername, isProduction)
+    : process.env.INITIAL_OWNER_PASSWORD || (!isProduction ? 'Samrat@Fitness2026!' : null);
 
-  const candidates = [
+  return [
     {
       username: ownerUsername,
       password: ownerPassword,
@@ -89,6 +91,71 @@ function seedAuthUsers() {
       trainerId: Number(process.env.INITIAL_TRAINER_ID || 101)
     }
   ].filter(user => user.password);
+}
+
+// Free Render instances have no shell access, so an operator cannot run a reset
+// script. When STAFF_PASSWORD_SYNC=true, every boot re-applies the configured
+// INITIAL_*_PASSWORD values to the accounts that already exist. This is the only
+// way to change a password from the dashboard once the database is populated.
+function syncStaffPasswordsFromEnv(candidates) {
+  if (process.env.STAFF_PASSWORD_SYNC !== 'true') return;
+
+  const changedAt = new Date().toISOString();
+  let updated = 0;
+
+  for (const candidate of candidates) {
+    const username = candidate.username.trim().toLowerCase();
+    const user = db.prepare('SELECT * FROM Users WHERE username = ? COLLATE NOCASE AND role = ? LIMIT 1')
+      .get(username, candidate.role);
+    if (!user) continue;
+
+    // Skip when the stored hash already matches, so token_version stays stable
+    // and existing sessions survive ordinary restarts.
+    if (bcrypt.compareSync(candidate.password, user.password_hash)) continue;
+
+    const policyError = validatePassword(candidate.password);
+    if (policyError) {
+      console.warn(`STAFF_PASSWORD_SYNC: skipping "${username}" — configured password is not secure: ${policyError}`);
+      continue;
+    }
+
+    const passwordHash = bcrypt.hashSync(candidate.password, bcryptRounds());
+    db.transaction(() => {
+      db.prepare(`
+        UPDATE Users
+        SET password_hash = ?, password_changed_at = ?, token_version = token_version + 1,
+            failed_login_attempts = 0, locked_until = NULL, updated_at = ?
+        WHERE id = ?
+      `).run(passwordHash, changedAt, changedAt, user.id);
+      db.prepare(`
+        UPDATE AuthSessions SET revoked_at = COALESCE(revoked_at, ?)
+        WHERE user_id = ? AND revoked_at IS NULL
+      `).run(changedAt, user.id);
+    })();
+
+    logAudit(null, 'System', 'Sync Staff Password', 'Users', user.id,
+      { username: user.username, role: candidate.role },
+      { message: 'Password re-applied from environment (STAFF_PASSWORD_SYNC=true).' });
+
+    console.warn(`STAFF_PASSWORD_SYNC: updated password for "${user.username}" (${candidate.role}) from the environment.`);
+    updated += 1;
+  }
+
+  if (updated > 0) {
+    console.warn(`STAFF_PASSWORD_SYNC: ${updated} staff password(s) updated. Unset STAFF_PASSWORD_SYNC once everyone has signed in.`);
+  } else {
+    console.log('STAFF_PASSWORD_SYNC: all configured staff passwords already match the environment.');
+  }
+}
+
+function seedAuthUsers() {
+  const userCount = db.prepare('SELECT COUNT(*) AS count FROM Users').get().count;
+  if (userCount > 0) {
+    syncStaffPasswordsFromEnv(buildStaffCandidates());
+    return;
+  }
+
+  const candidates = buildStaffCandidates({ resolveOwner: true });
 
   for (const user of candidates) {
     const passwordError = validatePassword(user.password);

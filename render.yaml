@@ -12,6 +12,12 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Free instances have no shell access, and the seeder only creates accounts
+      # while the Users table is empty. With this set, each boot re-applies the
+      # INITIAL_*_PASSWORD values below to the existing accounts, so passwords can
+      # be changed from the dashboard. Set to false once everyone has signed in.
+      - key: STAFF_PASSWORD_SYNC
+        value: "true"
       - key: PORT
         value: 10000
       - key: GYM_NAME

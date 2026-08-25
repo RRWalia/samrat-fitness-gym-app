@@ -58,9 +58,11 @@ The script validates the new password against the security policy, rewrites the 
 
 ### Changing `INITIAL_*_PASSWORD` after the first deploy
 
-The first-run seeder only creates accounts **while the `Users` table is empty** — so editing `INITIAL_OWNER_PASSWORD` (or any other `INITIAL_*_PASSWORD`) in the Render dashboard has **no effect on an existing database**. The accounts keep the passwords from the very first boot, and sign-in attempts with the new dashboard values fail with *"Invalid username or password."*
+The first-run seeder only creates accounts **while the `Users` table is empty**, so editing `INITIAL_OWNER_PASSWORD` (or any other `INITIAL_*_PASSWORD`) in the Render dashboard has **no effect on a populated database** — sign-in keeps failing with *"Invalid username or password."*
 
-To push the current environment values onto the existing accounts, run from the service shell:
+**On Render Free (no shell access):** set `STAFF_PASSWORD_SYNC=true` in the dashboard. On every boot the app then re-applies the configured `INITIAL_*_PASSWORD` values to the accounts that already exist — rewriting the bcrypt hash, clearing any lockout, bumping `token_version`, revoking live sessions and writing a `Sync Staff Password` audit entry. Passwords that already match are left untouched, so ordinary restarts don't disturb sessions. Set it back to `false` once everyone has signed in, otherwise a staff member's self-service password change is reverted at the next restart.
+
+**On a paid instance (shell available)** you can instead run a one-off:
 
 ```bash
 node scripts/applyStaffPasswords.js --dry-run   # preview which accounts would change
@@ -68,7 +70,11 @@ node scripts/applyStaffPasswords.js --yes       # apply every configured role
 node scripts/applyStaffPasswords.js --role owner --role manager --yes
 ```
 
-For each role it reads the matching `INITIAL_*_USERNAME` / `INITIAL_*_PASSWORD` pair, validates the password against the policy, rewrites the bcrypt hash, clears any lockout, bumps `token_version`, revokes live sessions and writes an audit entry. Roles whose password variable is unset are skipped.
+### Data durability on Render Free
+
+Free web services have an **ephemeral filesystem and cannot mount a persistent disk**. This app stores everything in SQLite (`gym.db`), so members, payments and attendance are **wiped whenever the service redeploys, restarts, or spins down after 15 minutes of inactivity** — and the database is re-seeded from scratch on the next boot. Free instances also spin down after 15 idle minutes and take ~1 minute to wake.
+
+Treat the free deployment as a **demo/evaluation environment only**. For real gym data, either upgrade to a paid instance and attach a disk (then set `DB_PATH` to a path on the mount), or migrate storage to a managed Postgres database.
 
 ### Local development
 
