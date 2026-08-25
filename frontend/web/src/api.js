@@ -79,6 +79,15 @@ export async function loginUser({ username, password, rememberMe }) {
   return result;
 }
 
+export async function requestForgotPassword(identifier) {
+  return apiRequest('/auth/forgot-password', {
+    method: 'POST',
+    auth: false,
+    suppressAuthEvent: true,
+    body: JSON.stringify({ identifier })
+  });
+}
+
 export async function fetchCurrentUser() {
   return apiRequest('/auth/me');
 }

@@ -22,6 +22,7 @@ router.post('/login', loginLimiter, AuthController.login);
 router.get('/me', authenticateToken, AuthController.me);
 router.post('/logout', authenticateToken, AuthController.logout);
 router.post('/logout-all', authenticateToken, AuthController.logoutAll);
+router.post('/forgot-password', AuthController.forgotPassword);
 router.post('/change-password', authenticateToken, AuthController.changePassword);
 
 module.exports = router;

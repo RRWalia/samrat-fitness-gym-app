@@ -42,7 +42,7 @@ function generateOwnerBootstrapPassword(username) {
 
 function resolveOwnerPassword(username, isProduction) {
   if (process.env.INITIAL_OWNER_PASSWORD) return process.env.INITIAL_OWNER_PASSWORD;
-  if (!isProduction) return 'Owner@2026!Gym';
+  if (!isProduction) return 'Ashish@samrat1!';
 
   if (process.env.STRICT_PRODUCTION_BOOTSTRAP === 'true') {
     throw new Error('INITIAL_OWNER_PASSWORD is required when creating the first production owner account.');

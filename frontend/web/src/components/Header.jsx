@@ -31,6 +31,13 @@ export default function Header({
 }) {
   const [time, setTime] = useState(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showPhoneModal, setShowPhoneModal] = useState(false);
+  const [phoneOverride, setPhoneOverride] = useState(undefined); // undefined = not yet overridden this session
+
+  const displayPhone = phoneOverride === undefined ? (user.phone ?? null) : phoneOverride;
+  const formattedPhone = /^\+91\d{10}$/.test(displayPhone || '')
+    ? `+91 ${displayPhone.slice(3, 8)} ${displayPhone.slice(8)}`
+    : displayPhone;
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -97,12 +104,21 @@ export default function Header({
                   <div className="border-b border-slate-800 px-1 pb-3">
                     <p className="text-xs font-bold text-white">{user.fullName}</p>
                     <p className="mt-0.5 text-[10px] text-slate-500">@{user.username} · {user.roleLabel}</p>
+                    <p className="mt-0.5 text-[10px] text-slate-600">
+                      {formattedPhone ? <span className="font-mono text-slate-500">{formattedPhone}</span> : 'No recovery mobile set'}
+                    </p>
                   </div>
                   <button
                     onClick={() => setShowPasswordModal(true)}
                     className="mt-2 flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
                   >
                     <KeyRound className="h-3.5 w-3.5 text-amber-300" /> Change password
+                  </button>
+                  <button
+                    onClick={() => setShowPhoneModal(true)}
+                    className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-300 transition hover:bg-slate-800 hover:text-white"
+                  >
+                    <Smartphone className="h-3.5 w-3.5 text-sky-300" /> {displayPhone ? 'Update mobile number' : 'Set mobile number'}
                   </button>
                   <button
                     onClick={onLogout}
@@ -149,6 +165,13 @@ export default function Header({
         <ChangePasswordModal
           onClose={() => setShowPasswordModal(false)}
           onChanged={onPasswordChanged}
+        />
+      )}
+      {showPhoneModal && (
+        <UpdatePhoneModal
+          user={user}
+          onClose={() => setShowPhoneModal(false)}
+          onSaved={setPhoneOverride}
         />
       )}
     </header>

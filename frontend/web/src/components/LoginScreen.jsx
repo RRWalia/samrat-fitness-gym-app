@@ -12,6 +12,7 @@ import {
   ShieldCheck,
   UserRound
 } from 'lucide-react';
+import ForgotPasswordModal from './ForgotPasswordModal';
 
 const roleCards = [
   { icon: Crown, label: 'Owner / Manager', detail: 'Financials, members & settings', color: 'text-amber-300 bg-amber-400/10 border-amber-400/20' },
@@ -20,7 +21,7 @@ const roleCards = [
 ];
 
 const demoAccounts = import.meta.env.DEV ? [
-  { label: 'Owner', username: 'Ashish', password: 'Owner@2026!Gym' },
+  { label: 'Owner', username: 'Ashish', password: 'Ashish@samrat1!' },
   { label: 'Manager', username: 'Parmar', password: 'Manager@2026!' },
   { label: 'Front Desk', username: 'frontdesk', password: 'Desk@2026!Gym' },
   { label: 'Trainer · Sona Walia', username: 'sona.walia', password: 'Trainer@2026!' }
@@ -33,6 +34,7 @@ export default function LoginScreen({ onLogin, notice }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -137,19 +139,20 @@ export default function LoginScreen({ onLogin, notice }) {
 
             <form onSubmit={submit} className="space-y-4">
               <div>
-                <label htmlFor="username" className="mb-1.5 block text-xs font-bold text-slate-300">User ID</label>
+                <label htmlFor="username" className="mb-1.5 block text-xs font-bold text-slate-300">User ID or Mobile number</label>
                 <div className="relative">
                   <UserRound className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                   <input
                     id="username"
                     type="text"
+                    inputMode="text"
                     autoComplete="username"
                     autoCapitalize="none"
                     spellCheck="false"
                     autoFocus
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
-                    placeholder="Enter your User ID"
+                    placeholder="Enter your User ID or registered mobile"
                     className="h-12 w-full rounded-xl border border-slate-700/80 bg-slate-950/70 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-amber-400/70 focus:ring-4 focus:ring-amber-400/10"
                     required
                   />
@@ -205,6 +208,16 @@ export default function LoginScreen({ onLogin, notice }) {
                 {loading ? 'Verifying secure access…' : 'Sign in securely'}
                 {!loading && <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />}
               </button>
+
+              <div className="flex items-center justify-end pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPassword(true)}
+                  className="text-xs font-semibold text-sky-300 transition hover:text-sky-200"
+                >
+                  Forgot password?
+                </button>
+              </div>
             </form>
 
             {demoAccounts.length > 0 && (
@@ -236,6 +249,8 @@ export default function LoginScreen({ onLogin, notice }) {
           </p>
         </section>
       </div>
+
+      {showForgotPassword && <ForgotPasswordModal onClose={() => setShowForgotPassword(false)} />}
     </main>
   );
 }

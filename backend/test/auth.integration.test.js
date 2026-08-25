@@ -70,13 +70,13 @@ test('JWT authentication, revocation, and role boundaries', async t => {
   await t.test('passwords are bcrypt hashes and login returns a bounded JWT session', async () => {
     const storedOwner = db.prepare("SELECT * FROM Users WHERE username = 'ashish'").get();
     assert.match(storedOwner.password_hash, /^\$2[aby]\$/);
-    assert.notEqual(storedOwner.password_hash, 'Owner@2026!Gym');
+    assert.notEqual(storedOwner.password_hash, 'Ashish@samrat1!');
 
     const failed = await login(baseUrl, 'Ashish', 'wrong-password');
     assert.equal(failed.status, 401);
     assert.equal(failed.data.error, 'Invalid username or password.');
 
-    const response = await login(baseUrl, 'Ashish', 'Owner@2026!Gym');
+    const response = await login(baseUrl, 'Ashish', 'Ashish@samrat1!');
     assert.equal(response.status, 200);
     assert.equal(response.data.success, true);
     assert.equal(response.data.user.role, 'owner');
@@ -144,6 +144,84 @@ test('JWT authentication, revocation, and role boundaries', async t => {
     const revoked = await request(baseUrl, '/api/members', { token: staffLogin.data.token });
     assert.equal(revoked.status, 401);
     assert.equal(revoked.data.code, 'INVALID_SESSION');
+  });
+
+  await t.test('login works with a registered mobile number and forgot-password identifies accounts', async () => {
+    db.prepare('UPDATE Users SET phone = ? WHERE username = ?').run('+919825011223', 'ashish');
+
+    const phoneLogin = await login(baseUrl, '98250 11223', 'Ashish@samrat1!');
+    assert.equal(phoneLogin.status, 200);
+    assert.equal(phoneLogin.data.user.username, 'ashish');
+
+    const plusLogin = await login(baseUrl, '+919825011223', 'Ashish@samrat1!');
+    assert.equal(plusLogin.status, 200);
+    assert.equal(plusLogin.data.user.username, 'ashish');
+
+    const forgot = await request(baseUrl, '/api/auth/forgot-password', {
+      method: 'POST',
+      body: { identifier: '+91 98250 11223' }
+    });
+    assert.equal(forgot.status, 200);
+    assert.equal(forgot.data.found, true);
+    assert.equal(forgot.data.account.username, 'ashish');
+    assert.equal(forgot.data.account.hasRecoveryMobile, true);
+    assert.match(forgot.data.account.phoneMasked, /1223$/);
+    assert.ok(!('password_hash' in (forgot.data.account || {})));
+
+    const forgotByUsername = await request(baseUrl, '/api/auth/forgot-password', {
+      method: 'POST',
+      body: { identifier: 'Ashish' }
+    });
+    assert.equal(forgotByUsername.status, 200);
+    assert.equal(forgotByUsername.data.found, true);
+
+    const missing = await request(baseUrl, '/api/auth/forgot-password', {
+      method: 'POST',
+      body: { identifier: 'nobody.here' }
+    });
+    assert.equal(missing.status, 200);
+    assert.equal(missing.data.found, false);
+  });
+
+  await t.test('staff accounts can register mobile numbers with duplicate protection', async () => {
+    const created = await request(baseUrl, '/api/users', {
+      token: ownerToken,
+      method: 'POST',
+      body: {
+        username: 'desk.mobile',
+        fullName: 'Mobile Desk',
+        password: 'Integration@2026!',
+        role: 'front_desk',
+        phone: '98980 44556'
+      }
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.data.data.phone, '+919898044556');
+
+    const mobileLogin = await login(baseUrl, '+919898044556', 'Integration@2026!');
+    assert.equal(mobileLogin.status, 200);
+    assert.equal(mobileLogin.data.user.username, 'desk.mobile');
+
+    const duplicate = await request(baseUrl, '/api/users', {
+      token: ownerToken,
+      method: 'POST',
+      body: {
+        username: 'desk.mobile2',
+        fullName: 'Duplicate Desk',
+        password: 'Integration@2026!',
+        role: 'front_desk',
+        phone: '9898044556'
+      }
+    });
+    assert.equal(duplicate.status, 409);
+
+    const cleared = await request(baseUrl, `/api/users/${created.data.data.id}`, {
+      token: ownerToken,
+      method: 'PATCH',
+      body: { phone: '' }
+    });
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.data.data.phone, null);
   });
 
   await t.test('front desk is limited to redacted lookup and attendance operations', async () => {
