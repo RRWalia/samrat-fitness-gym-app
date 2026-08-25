@@ -25,19 +25,19 @@ services:
       - key: INITIAL_OWNER_NAME
         value: "Ashish"
       - key: INITIAL_OWNER_PASSWORD
-        generateValue: true
+        value: "Samrat@Fitness2026!"
       - key: INITIAL_MANAGER_USERNAME
         value: "parmar"
       - key: INITIAL_MANAGER_NAME
         value: "Parmar"
       - key: INITIAL_MANAGER_PASSWORD
-        generateValue: true
+        value: "Manager@2026!"
       - key: INITIAL_FRONT_DESK_USERNAME
         value: "frontdesk"
       - key: INITIAL_FRONT_DESK_NAME
         value: "Front Desk Team"
       - key: INITIAL_FRONT_DESK_PASSWORD
-        generateValue: true
+        value: "FrontDesk@2026!"
       - key: INITIAL_TRAINER_USERNAME
         value: "sona.walia"
       - key: INITIAL_TRAINER_NAME
@@ -45,4 +45,4 @@ services:
       - key: INITIAL_TRAINER_ID
         value: "101"
       - key: INITIAL_TRAINER_PASSWORD
-        generateValue: true
+        value: "Trainer@2026!"

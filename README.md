@@ -56,6 +56,20 @@ node scripts/resetOwnerPassword.js --username ashish --password 'Samrat@Fitness2
 
 The script validates the new password against the security policy, rewrites the bcrypt hash, bumps `token_version`, revokes every active session for that account, and writes an audit-log entry. Confirm the target User ID when prompted (or pass `--yes` for non-interactive runs).
 
+### Changing `INITIAL_*_PASSWORD` after the first deploy
+
+The first-run seeder only creates accounts **while the `Users` table is empty** — so editing `INITIAL_OWNER_PASSWORD` (or any other `INITIAL_*_PASSWORD`) in the Render dashboard has **no effect on an existing database**. The accounts keep the passwords from the very first boot, and sign-in attempts with the new dashboard values fail with *"Invalid username or password."*
+
+To push the current environment values onto the existing accounts, run from the service shell:
+
+```bash
+node scripts/applyStaffPasswords.js --dry-run   # preview which accounts would change
+node scripts/applyStaffPasswords.js --yes       # apply every configured role
+node scripts/applyStaffPasswords.js --role owner --role manager --yes
+```
+
+For each role it reads the matching `INITIAL_*_USERNAME` / `INITIAL_*_PASSWORD` pair, validates the password against the policy, rewrites the bcrypt hash, clears any lockout, bumps `token_version`, revokes live sessions and writes an audit entry. Roles whose password variable is unset are skipped.
+
 ### Local development
 
 Node.js **22.12.0 or newer** is required. Vite 8 (`^20.19.0 || >=22.12.0`) and `better-sqlite3` 13 (`>=22`) both refuse older runtimes. The pinned version lives in `.node-version` (read by Render and by `nodenv`/`fnm`/`nvm`) and the accepted range in `package.json` → `engines`.
