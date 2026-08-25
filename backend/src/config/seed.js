@@ -42,7 +42,7 @@ function generateOwnerBootstrapPassword(username) {
 
 function resolveOwnerPassword(username, isProduction) {
   if (process.env.INITIAL_OWNER_PASSWORD) return process.env.INITIAL_OWNER_PASSWORD;
-  if (!isProduction) return 'Ashish@samrat1!';
+  if (!isProduction) return 'Samrat@Fitness2026!';
 
   if (process.env.STRICT_PRODUCTION_BOOTSTRAP === 'true') {
     throw new Error('INITIAL_OWNER_PASSWORD is required when creating the first production owner account.');
@@ -76,7 +76,7 @@ function seedAuthUsers() {
     },
     {
       username: process.env.INITIAL_FRONT_DESK_USERNAME || 'frontdesk',
-      password: process.env.INITIAL_FRONT_DESK_PASSWORD || (!isProduction ? 'Desk@2026!Gym' : null),
+      password: process.env.INITIAL_FRONT_DESK_PASSWORD || (!isProduction ? 'FrontDesk@2026!' : null),
       fullName: process.env.INITIAL_FRONT_DESK_NAME || 'Front Desk Team',
       role: 'front_desk',
       trainerId: null

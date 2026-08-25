@@ -51,7 +51,7 @@ If the owner password is lost (for example the Render-generated `INITIAL_OWNER_P
 
 ```bash
 # Render: service → Web Service → "Shell" (or any host with the app's DB)
-node scripts/resetOwnerPassword.js --username ashish --password 'Ashish@samrat1!'
+node scripts/resetOwnerPassword.js --username ashish --password 'Samrat@Fitness2026!'
 ```
 
 The script validates the new password against the security policy, rewrites the bcrypt hash, bumps `token_version`, revokes every active session for that account, and writes an audit-log entry. Confirm the target User ID when prompted (or pass `--yes` for non-interactive runs).
@@ -74,9 +74,9 @@ On a new **non-production** database, these demo accounts are created:
 
 | Role | User ID | Password |
 | :--- | :--- | :--- |
-| Owner | `Ashish` | `Ashish@samrat1!` |
-| Manager | `Parmar` | `Manager@2026!` |
-| Front Desk | `frontdesk` | `Desk@2026!Gym` |
+| Owner | `ashish` | `Samrat@Fitness2026!` |
+| Manager | `parmar` | `Manager@2026!` |
+| Front Desk | `frontdesk` | `FrontDesk@2026!` |
 | Trainer — Sona Walia (Trainer ID 101) | `sona.walia` | `Trainer@2026!` |
 
 These demo passwords are never created automatically in production. For a direct deployment, set a random `JWT_SECRET` (32+ characters) and the required `INITIAL_*_PASSWORD` values before the first production start; see `.env.example`. The Render Blueprint generates independent, high-entropy JWT and bootstrap passwords for all four staff roles—no production password is stored in Git. An authorized Render administrator can reveal/copy those generated `INITIAL_*_PASSWORD` values from the service's **Environment** page.

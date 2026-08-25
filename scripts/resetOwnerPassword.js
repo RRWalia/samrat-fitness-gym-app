@@ -4,8 +4,8 @@
  * when the owner account is locked out and the current password is unknown.
  *
  * Usage (from the repository root, or set DB_PATH explicitly):
- *   node scripts/resetOwnerPassword.js --username ashish --password 'Ashish@samrat1!'
- *   node scripts/resetOwnerPassword.js --password 'Ashish@samrat1!' --yes
+ *   node scripts/resetOwnerPassword.js --username ashish --password 'Samrat@Fitness2026!'
+ *   node scripts/resetOwnerPassword.js --password 'Samrat@Fitness2026!' --yes
  *
  * What it does:
  *   - Reuses the application's database (same DB_PATH resolution as the API).

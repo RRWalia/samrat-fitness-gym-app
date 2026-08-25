@@ -46,8 +46,8 @@ test('CSV bulk import endpoint, role boundary, and audit trail', async t => {
   });
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
-  const ownerToken = (await login(baseUrl, 'ashish', 'Ashish@samrat1!')).data.token;
-  const deskToken = (await login(baseUrl, 'frontdesk', 'Desk@2026!Gym')).data.token;
+  const ownerToken = (await login(baseUrl, 'ashish', 'Samrat@Fitness2026!')).data.token;
+  const deskToken = (await login(baseUrl, 'frontdesk', 'FrontDesk@2026!')).data.token;
   assert.ok(ownerToken && deskToken);
 
   await t.test('the sample template downloads with the seeded plan names', async () => {

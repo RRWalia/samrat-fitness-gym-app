@@ -21,9 +21,9 @@ const roleCards = [
 ];
 
 const demoAccounts = import.meta.env.DEV ? [
-  { label: 'Owner', username: 'Ashish', password: 'Ashish@samrat1!' },
+  { label: 'Owner', username: 'Ashish', password: 'Samrat@Fitness2026!' },
   { label: 'Manager', username: 'Parmar', password: 'Manager@2026!' },
-  { label: 'Front Desk', username: 'frontdesk', password: 'Desk@2026!Gym' },
+  { label: 'Front Desk', username: 'frontdesk', password: 'FrontDesk@2026!' },
   { label: 'Trainer · Sona Walia', username: 'sona.walia', password: 'Trainer@2026!' }
 ] : [];
 

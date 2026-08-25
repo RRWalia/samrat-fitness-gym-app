@@ -70,13 +70,13 @@ test('JWT authentication, revocation, and role boundaries', async t => {
   await t.test('passwords are bcrypt hashes and login returns a bounded JWT session', async () => {
     const storedOwner = db.prepare("SELECT * FROM Users WHERE username = 'ashish'").get();
     assert.match(storedOwner.password_hash, /^\$2[aby]\$/);
-    assert.notEqual(storedOwner.password_hash, 'Ashish@samrat1!');
+    assert.notEqual(storedOwner.password_hash, 'Samrat@Fitness2026!');
 
     const failed = await login(baseUrl, 'Ashish', 'wrong-password');
     assert.equal(failed.status, 401);
     assert.equal(failed.data.error, 'Invalid username or password.');
 
-    const response = await login(baseUrl, 'Ashish', 'Ashish@samrat1!');
+    const response = await login(baseUrl, 'Ashish', 'Samrat@Fitness2026!');
     assert.equal(response.status, 200);
     assert.equal(response.data.success, true);
     assert.equal(response.data.user.role, 'owner');
@@ -149,11 +149,11 @@ test('JWT authentication, revocation, and role boundaries', async t => {
   await t.test('login works with a registered mobile number and forgot-password identifies accounts', async () => {
     db.prepare('UPDATE Users SET phone = ? WHERE username = ?').run('+919825011223', 'ashish');
 
-    const phoneLogin = await login(baseUrl, '98250 11223', 'Ashish@samrat1!');
+    const phoneLogin = await login(baseUrl, '98250 11223', 'Samrat@Fitness2026!');
     assert.equal(phoneLogin.status, 200);
     assert.equal(phoneLogin.data.user.username, 'ashish');
 
-    const plusLogin = await login(baseUrl, '+919825011223', 'Ashish@samrat1!');
+    const plusLogin = await login(baseUrl, '+919825011223', 'Samrat@Fitness2026!');
     assert.equal(plusLogin.status, 200);
     assert.equal(plusLogin.data.user.username, 'ashish');
 
@@ -225,7 +225,7 @@ test('JWT authentication, revocation, and role boundaries', async t => {
   });
 
   await t.test('front desk is limited to redacted lookup and attendance operations', async () => {
-    const loginResponse = await login(baseUrl, 'frontdesk', 'Desk@2026!Gym');
+    const loginResponse = await login(baseUrl, 'frontdesk', 'FrontDesk@2026!');
     assert.equal(loginResponse.status, 200);
     frontDeskToken = loginResponse.data.token;
 
