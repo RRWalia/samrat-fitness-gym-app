@@ -70,13 +70,13 @@ test('JWT authentication, revocation, and role boundaries', async t => {
   await t.test('passwords are bcrypt hashes and login returns a bounded JWT session', async () => {
     const storedOwner = db.prepare("SELECT * FROM Users WHERE username = 'ashish'").get();
     assert.match(storedOwner.password_hash, /^\$2[aby]\$/);
-    assert.notEqual(storedOwner.password_hash, 'Owner@2026!Gym');
+    assert.notEqual(storedOwner.password_hash, 'Ashish@samrat1!');
 
     const failed = await login(baseUrl, 'Ashish', 'wrong-password');
     assert.equal(failed.status, 401);
     assert.equal(failed.data.error, 'Invalid username or password.');
 
-    const response = await login(baseUrl, 'Ashish', 'Owner@2026!Gym');
+    const response = await login(baseUrl, 'Ashish', 'Ashish@samrat1!');
     assert.equal(response.status, 200);
     assert.equal(response.data.success, true);
     assert.equal(response.data.user.role, 'owner');

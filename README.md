@@ -56,7 +56,7 @@ On a new **non-production** database, these demo accounts are created:
 
 | Role | User ID | Password |
 | :--- | :--- | :--- |
-| Owner | `Ashish` | `Owner@2026!Gym` |
+| Owner | `Ashish` | `Ashish@samrat1!` |
 | Manager | `Parmar` | `Manager@2026!` |
 | Front Desk | `frontdesk` | `Desk@2026!Gym` |
 | Trainer — Sona Walia (Trainer ID 101) | `sona.walia` | `Trainer@2026!` |
