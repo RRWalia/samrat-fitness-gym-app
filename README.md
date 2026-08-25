@@ -1,4 +1,4 @@
-# Samrat Fitness Gym App
+# Samrat Fitness King Gym App
 
 > **QR Attendance | Early Churn Detection | Renewal System | Add-on Marketplace**
 > 
