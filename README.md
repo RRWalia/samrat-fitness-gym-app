@@ -127,6 +127,26 @@ cd backend && npm test
 * Usage tracking for PT packages.
 * Cancellation terms shown before purchase.
 
+### 5. Bulk Member Import (CSV) 📥
+
+Owners migrating from a spreadsheet or a previous billing tool can load the whole roster in one go instead of typing each member.
+
+* **Template download** — `Sample CSV` in the import dialog returns a CSV whose `plan_name` column is filled with that gym's real active plan names.
+* **Column aliases** — `Full Name`/`Member Name`, `Mobile No`/`Contact`, `Joining Date`/`Start Date`, `Valid Till`/`End Date` and similar headers are recognised, so most existing exports upload unchanged.
+* **Tolerant values** — phones are normalised to `+91…` (`98765 43210`, `+91 98765-43210` and `919876543210` all match), dates accept `DD/MM/YYYY` or `YYYY-MM-DD`, and `Quarterly (3 Mo)`-style plan names resolve to the gym's 3-month plan.
+* **Missing fields default safely** — blank plan falls back to the shortest plan, blank join date becomes today, and blank expiry is computed from the plan duration.
+* **Preview before import** — every row is labelled *Create*, *Update*, *Skip* or *Error* with a plain-language reason; nothing is written until the owner confirms.
+* **All-or-nothing write** — the confirmed rows are inserted in a single SQLite transaction, so a mid-file failure saves nothing.
+* **Duplicates** — a phone already in the roster either updates that member (new membership row + `Paid` payment record) or is skipped, chosen per upload.
+* **Audit trail** — each import writes one `CSV Bulk Import` entry to `AuditLogs` with created/updated/skipped/failed counts.
+* **Limits** — 2,000 rows and 1.5 MB per file. Owner/Manager only; Front Desk and Trainer requests return `403`.
+
+| Endpoint | Method | Purpose |
+| :--- | :--- | :--- |
+| `/api/members/import/sample` | GET | Download the CSV template (text/csv) |
+| `/api/members/import/preview` | POST | Validate a CSV body, write nothing |
+| `/api/members/import` | POST | Import the valid rows in one transaction |
+
 ---
 
 ## 👥 User Roles & Permissions

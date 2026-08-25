@@ -5,6 +5,7 @@ const AttendanceController = require('../controllers/attendance.controller');
 const RedListController = require('../controllers/redlist.controller');
 const RenewalsController = require('../controllers/renewals.controller');
 const MembersController = require('../controllers/members.controller');
+const MembersImportController = require('../controllers/members.import.controller');
 const AddOnsController = require('../controllers/addons.controller');
 const DashboardController = require('../controllers/dashboard.controller');
 const UsersController = require('../controllers/users.controller');
@@ -38,6 +39,13 @@ router.get('/members', memberLookupAccess, MembersController.getAllMembers);
 router.get('/members/:id', memberLookupAccess, MembersController.getMemberById);
 router.post('/members', fullAccess, MembersController.createMember);
 router.patch('/members/:id/status', fullAccess, MembersController.toggleStatus);
+
+// CSV bulk import. Files travel as text inside a JSON body (no multipart upload
+// handling needed), with a route-local limit larger than the global 100kb cap.
+const importBodyParser = express.json({ limit: '2mb' });
+router.get('/members/import/sample', fullAccess, MembersImportController.getSampleTemplate);
+router.post('/members/import/preview', importBodyParser, fullAccess, MembersImportController.previewImport);
+router.post('/members/import', importBodyParser, fullAccess, MembersImportController.importMembers);
 
 router.get('/plans', fullAccess, (req, res) => {
   try {

@@ -22,7 +22,8 @@ import {
   Settings, 
   Clock, 
   ChevronRight,
-  UserPlus
+  UserPlus,
+  FileUp
 } from 'lucide-react';
 import { 
   fetchStats, 
@@ -44,6 +45,7 @@ import RenewalModal from './RenewalModal';
 import ReceiptModal from './ReceiptModal';
 import DailySummaryModal from './DailySummaryModal';
 import NewMemberModal from './NewMemberModal';
+import ImportMembersModal from './ImportMembersModal';
 import StaffAccessPanel from './StaffAccessPanel';
 
 export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
@@ -73,6 +75,7 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
   const [activeReceiptPaymentId, setActiveReceiptPaymentId] = useState(null);
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [showNewMemberModal, setShowNewMemberModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   // Notification / Toast
   const [toastMessage, setToastMessage] = useState(null);
@@ -347,6 +350,13 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
           >
             <FileText className="w-3.5 h-3.5 text-amber-400" />
             Daily Closing Summary
+          </button>
+          <button
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition-all cursor-pointer"
+          >
+            <FileUp className="w-3.5 h-3.5 text-amber-400" />
+            Bulk Import
           </button>
           <button
             onClick={() => setShowNewMemberModal(true)}
@@ -721,6 +731,14 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
                     className="w-full bg-slate-950/60 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
                   />
                 </div>
+                <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowImportModal(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold text-xs transition-colors"
+                >
+                  <FileUp className="w-3.5 h-3.5 text-amber-400" />
+                  Import CSV
+                </button>
                 <button
                   onClick={() => setShowNewMemberModal(true)}
                   className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs hover:bg-amber-400 transition-colors"
@@ -728,6 +746,7 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
                   <UserPlus className="w-3.5 h-3.5" />
                   Add Member
                 </button>
+                </div>
               </div>
 
               <div className="overflow-x-auto">
@@ -952,6 +971,17 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
           onClose={() => setShowNewMemberModal(false)}
           onSuccess={() => {
             showToast('New member registered');
+            loadAllData();
+          }}
+        />
+      )}
+
+      {showImportModal && (
+        <ImportMembersModal
+          onClose={() => setShowImportModal(false)}
+          onSuccess={(result) => {
+            const summary = result?.summary || {};
+            showToast(`✅ CSV import done: ${summary.created || 0} created, ${summary.updated || 0} updated, ${summary.skipped || 0} skipped, ${summary.failed || 0} failed.`);
             loadAllData();
           }}
         />

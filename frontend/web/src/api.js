@@ -50,7 +50,10 @@ async function apiRequest(path, options = {}) {
   }
 
   const headers = new Headers(fetchOptions.headers || {});
-  if (fetchOptions.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  // A string body (e.g. CSV text) keeps whatever Content-Type the caller set.
+  if (fetchOptions.body && !headers.has('Content-Type') && typeof fetchOptions.body !== 'string') {
+    headers.set('Content-Type', 'application/json');
+  }
   if (auth && session?.token) headers.set('Authorization', `Bearer ${session.token}`);
 
   const response = await fetch(`${API_BASE}${path}`, { ...fetchOptions, headers });
@@ -66,6 +69,29 @@ async function apiRequest(path, options = {}) {
     emitUnauthorized(data.code || 'AUTH_REQUIRED');
   }
   return { ...data, httpStatus: response.status };
+}
+
+async function apiTextRequest(path, options = {}) {
+  const { auth = true, suppressAuthEvent = false, ...fetchOptions } = options;
+  const session = getStoredSession();
+
+  if (auth && session && Date.parse(session.expiresAt) <= Date.now()) {
+    clearStoredSession();
+    if (!suppressAuthEvent) emitUnauthorized('SESSION_EXPIRED');
+    return { success: false, error: 'Your session has expired.', code: 'SESSION_EXPIRED' };
+  }
+
+  const headers = new Headers(fetchOptions.headers || {});
+  if (auth && session?.token) headers.set('Authorization', `Bearer ${session.token}`);
+
+  const response = await fetch(`${API_BASE}${path}`, { ...fetchOptions, headers });
+  const text = await response.text();
+  if (!response.ok) {
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* non-JSON error body */ }
+    return { success: false, error: parsed?.error || 'The server returned an error.', httpStatus: response.status };
+  }
+  return { success: true, text, httpStatus: response.status };
 }
 
 export async function loginUser({ username, password, rememberMe }) {
@@ -150,6 +176,24 @@ export async function updateMemberStatus(id, status, reason) {
   return apiRequest(`/members/${id}/status`, {
     method: 'PATCH',
     body: JSON.stringify({ status, reason })
+  });
+}
+
+export async function fetchMemberImportTemplate() {
+  return apiTextRequest('/members/import/sample');
+}
+
+export async function previewMemberImport(csv, duplicateMode = 'update') {
+  return apiRequest('/members/import/preview', {
+    method: 'POST',
+    body: JSON.stringify({ csv, duplicateMode })
+  });
+}
+
+export async function importMembersFromCsv(csv, duplicateMode = 'update') {
+  return apiRequest('/members/import', {
+    method: 'POST',
+    body: JSON.stringify({ csv, duplicateMode })
   });
 }
 
