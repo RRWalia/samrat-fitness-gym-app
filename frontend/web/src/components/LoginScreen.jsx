@@ -25,6 +25,8 @@ export default function LoginScreen({ onLogin, notice }) {
   const buttonRef = useRef(null);
   const rememberRef = useRef(rememberMe);
   useEffect(() => { rememberRef.current = rememberMe; }, [rememberMe]);
+  const onLoginRef = useRef(onLogin);
+  useEffect(() => { onLoginRef.current = onLogin; }, [onLogin]);
 
   useEffect(() => {
     let cancelled = false;
@@ -42,7 +44,8 @@ export default function LoginScreen({ onLogin, notice }) {
     let cancelled = false;
 
     const initButton = () => {
-      if (cancelled || !window.google?.accounts?.id) return;
+      if (cancelled || !window.google?.accounts?.id || !buttonRef.current) return;
+      buttonRef.current.innerHTML = ''; // never render duplicate buttons
       window.google.accounts.id.initialize({
         client_id: config.clientId,
         callback: async (response) => {
@@ -50,7 +53,7 @@ export default function LoginScreen({ onLogin, notice }) {
           setLoading(true);
           setError('');
           try {
-            const result = await onLogin({ credential: response.credential, rememberMe: rememberRef.current });
+            const result = await onLoginRef.current({ credential: response.credential, rememberMe: rememberRef.current });
             if (!result?.success) setError(result?.error || 'Unable to sign in with Google. Please try again.');
           } catch {
             setError('Unable to reach the secure server. Check your connection and try again.');
@@ -91,7 +94,7 @@ export default function LoginScreen({ onLogin, notice }) {
       cancelled = true;
       script.removeEventListener('load', initButton);
     };
-  }, [config, onLogin]);
+  }, [config]);
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#070b12] text-slate-100 selection:bg-amber-400 selection:text-slate-950">
