@@ -5,6 +5,7 @@ const AttendanceController = require('../controllers/attendance.controller');
 const RedListController = require('../controllers/redlist.controller');
 const RenewalsController = require('../controllers/renewals.controller');
 const MembersController = require('../controllers/members.controller');
+const MembersProfileController = require('../controllers/members.profile.controller');
 const MembersImportController = require('../controllers/members.import.controller');
 const AddOnsController = require('../controllers/addons.controller');
 const DashboardController = require('../controllers/dashboard.controller');
@@ -36,6 +37,7 @@ router.get('/receipts/renewal/:paymentId', fullAccess, RenewalsController.getRec
 
 // List/detail responses are scoped and redacted by role in the controller.
 router.get('/members', memberLookupAccess, MembersController.getAllMembers);
+router.get('/members/:id/profile', memberLookupAccess, MembersProfileController.getMemberProfile);
 router.get('/members/:id', memberLookupAccess, MembersController.getMemberById);
 router.post('/members', fullAccess, MembersController.createMember);
 router.patch('/members/:id/status', fullAccess, MembersController.toggleStatus);

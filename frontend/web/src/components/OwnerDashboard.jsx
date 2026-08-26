@@ -47,10 +47,11 @@ import DailySummaryModal from './DailySummaryModal';
 import NewMemberModal from './NewMemberModal';
 import ImportMembersModal from './ImportMembersModal';
 import StaffAccessPanel from './StaffAccessPanel';
+import Member360Drawer from './Member360Drawer';
 
 export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
   const [stats, setStats] = useState(null);
-  const [activeTab, setActiveTab] = useState('redlist'); // 'redlist', 'renewals', 'addons', 'attendance', 'members', 'audit', 'settings'
+  const [activeTab, setActiveTab] = useState('redlist');
   
   // Data states
   const [redList, setRedList] = useState([]);
@@ -63,7 +64,6 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
   const [attendance, setAttendance] = useState([]);
   const [members, setMembers] = useState([]);
   const [searchMember, setSearchMember] = useState('');
-  const [selectedMemberProfile, setSelectedMemberProfile] = useState(null);
 
   const [auditLogs, setAuditLogs] = useState([]);
   const [addOns, setAddOns] = useState([]);
@@ -76,6 +76,7 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [showNewMemberModal, setShowNewMemberModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [member360Id, setMember360Id] = useState(null);
 
   // Notification / Toast
   const [toastMessage, setToastMessage] = useState(null);
@@ -115,7 +116,6 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
     loadAllData();
   }, [redBand, redStatus, renewalTimeframe, searchMember]);
 
-  // Handler for running automated No-Show Scan
   const handleRunNoShowScan = async () => {
     try {
       const res = await triggerNoShowScan();
@@ -123,12 +123,11 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
         showToast(`✅ Daily Scan Complete! ${res.newCasesCount} new no-show cases flagged.`);
         loadAllData();
       }
-    } catch (err) {
+    } catch {
       showToast('❌ Failed to run scan');
     }
   };
 
-  // Handler for running Renewal Reminders Scan
   const handleRunRenewalScan = async () => {
     try {
       const res = await triggerRenewalScan();
@@ -136,7 +135,7 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
         showToast(`✅ Renewal Engine: ${res.remindersSentCount} reminders dispatched.`);
         loadAllData();
       }
-    } catch (err) {
+    } catch {
       showToast('❌ Failed to run renewal scan');
     }
   };
@@ -149,7 +148,7 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
         showToast(`Member marked as ${nextStatus}`);
         loadAllData();
       }
-    } catch (err) {
+    } catch {
       showToast('Error updating status');
     }
   };
@@ -171,7 +170,6 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
   return (
     <div className="space-y-6">
       
-      {/* Toast */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-slate-900 border border-amber-500/50 text-white text-xs px-4 py-3 rounded-xl shadow-2xl flex items-center gap-2 animate-bounce">
           <Sparkles className="w-4 h-4 text-amber-400" />
@@ -181,8 +179,6 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
 
       {/* Top 8 Cards / Operating Loop KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-        
-        {/* 1. Active Members */}
         <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Active Members</span>
@@ -199,7 +195,6 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
           </div>
         </div>
 
-        {/* 2. Today's Check-ins */}
         <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Today's Check-Ins</span>
@@ -216,7 +211,6 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
           </div>
         </div>
 
-        {/* 3. Open No-Show Red List */}
         <div className="bg-slate-900/80 border border-red-500/20 p-4 rounded-2xl relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-red-400">Open Red-List (10d+)</span>
@@ -226,14 +220,13 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
           </div>
           <div className="mt-2 flex items-baseline gap-2">
             <span className="text-2xl font-black text-red-400 font-mono">{stats?.openNoShowCasesCount || 0}</span>
-            <span className="text-[11px] text-slate-400">at risk</span>
+            <span className="text-[11px] text-slate-400\">at risk</span>
           </div>
           <div className="mt-1 text-[11px] text-amber-300 font-medium">
-            Recovery Rate: <span className="font-bold font-mono">{stats?.recoveryRate || 0}%</span> (Target: &gt;50%)
+            Recovery Rate: <span className="font-bold font-mono\">{stats?.recoveryRate || 0}%</span> (Target: &gt;50%)
           </div>
         </div>
 
-        {/* 4. Renewals Due in 7 Days */}
         <div className="bg-slate-900/80 border border-amber-500/20 p-4 rounded-2xl relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-amber-300">Renewals Due (7d)</span>
@@ -242,15 +235,14 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-amber-400 font-mono">{stats?.renewalsDue7dCount || 0}</span>
+            <span className="text-2xl font-black text-amber-400 font-mono\">{stats?.renewalsDue7dCount || 0}</span>
             <span className="text-[11px] text-slate-400">members</span>
           </div>
           <div className="mt-1 text-[11px] text-slate-400">
-            On-time rate: <span className="text-emerald-400 font-bold font-mono">{stats?.onTimeRenewalRate || 85}%</span>
+            On-time rate: <span className="text-emerald-400 font-bold font-mono\">{stats?.onTimeRenewalRate || 85}%</span>
           </div>
         </div>
 
-        {/* 5. Renewal Revenue This Month */}
         <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Renewal Revenue (Mo)</span>
@@ -259,14 +251,13 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
             </span>
           </div>
           <div className="mt-2">
-            <span className="text-2xl font-black text-white font-mono">₹{stats?.renewalRevenueThisMonth || 0}</span>
+            <span className="text-2xl font-black text-white font-mono\">₹{stats?.renewalRevenueThisMonth || 0}</span>
           </div>
           <div className="mt-1 text-[11px] text-emerald-400 font-medium">
             100% verified & receipted
           </div>
         </div>
 
-        {/* 6. Add-on Revenue */}
         <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Add-on Sales (Mo)</span>
@@ -275,14 +266,13 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
             </span>
           </div>
           <div className="mt-2">
-            <span className="text-2xl font-black text-purple-300 font-mono">₹{stats?.addonRevenueThisMonth || 0}</span>
+            <span className="text-2xl font-black text-purple-300 font-mono\">₹{stats?.addonRevenueThisMonth || 0}</span>
           </div>
           <div className="mt-1 text-[11px] text-slate-400">
-            Conversion: <span className="text-purple-300 font-bold font-mono">{stats?.addonConversionRate || 0}%</span> (Target: &gt;20%)
+            Conversion: <span className="text-purple-300 font-bold font-mono\">{stats?.addonConversionRate || 0}%</span> (Target: &gt;20%)
           </div>
         </div>
 
-        {/* 7. Recovered Members */}
         <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">Recovered Members</span>
@@ -291,7 +281,7 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
             </span>
           </div>
           <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-teal-400 font-mono">{stats?.returnedCasesCount || 0}</span>
+            <span className="text-2xl font-black text-teal-400 font-mono\">{stats?.returnedCasesCount || 0}</span>
             <span className="text-[11px] text-slate-400">returned</span>
           </div>
           <div className="mt-1 text-[11px] text-teal-300">
@@ -299,7 +289,6 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
           </div>
         </div>
 
-        {/* 8. Data Health */}
         <div className="bg-slate-900/80 border border-slate-800 p-4 rounded-2xl flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-slate-400">System Integrity</span>
@@ -318,7 +307,6 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
             View Daily Closing Report <ChevronRight className="w-3 h-3" />
           </button>
         </div>
-
       </div>
 
       {/* Action Bar */}
@@ -411,7 +399,6 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
           {activeTab === 'redlist' && (
             <div className="space-y-4">
               
-              {/* Filter controls */}
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-800">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold text-slate-400">Risk Filter:</span>
@@ -448,7 +435,6 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
                 </div>
               </div>
 
-              {/* Red list Table */}
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs text-slate-300">
                   <thead className="bg-slate-950/60 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
@@ -473,10 +459,11 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
                         const latestFollowUp = item.followUps?.[0];
                         return (
                           <tr key={item.case_id} className="hover:bg-slate-800/40 transition-colors">
-                            
                             <td className="py-3.5 px-4">
-                              <div className="font-bold text-white text-sm">{item.member_name}</div>
-                              <div className="text-[11px] text-slate-400 font-mono">{item.member_phone}</div>
+                              <button onClick={() => setMember360Id(item.member_id)} className="text-left group">
+                                <div className="font-bold text-white text-sm group-hover:text-amber-300 transition-colors">{item.member_name}</div>
+                                <div className="text-[11px] text-slate-400 font-mono group-hover:text-amber-200/70">{item.member_phone}</div>
+                              </button>
                             </td>
 
                             <td className="py-3.5 px-4">
@@ -531,12 +518,18 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
                             </td>
 
                             <td className="py-3.5 px-4 text-right">
-                              <div className="flex items-center justify-end gap-2">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  onClick={() => setMember360Id(item.member_id)}
+                                  className="px-2.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-400/20 to-orange-500/20 hover:from-amber-400/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/30 font-bold text-[11px] transition-colors cursor-pointer"
+                                >
+                                  360°
+                                </button>
                                 <button
                                   onClick={() => setActiveFollowUpCase(item)}
                                   className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold text-xs transition-colors cursor-pointer"
                                 >
-                                  Log Follow-Up
+                                  Follow-Up
                                 </button>
                                 <button
                                   onClick={() => onSwitchToMember && onSwitchToMember(item.member_id)}
@@ -547,7 +540,6 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
                                 </button>
                               </div>
                             </td>
-
                           </tr>
                         );
                       })
@@ -599,8 +591,10 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
                       return (
                         <tr key={r.membership_id} className="hover:bg-slate-800/40 transition-colors">
                           <td className="py-3.5 px-4">
-                            <div className="font-bold text-white text-sm">{r.member_name}</div>
-                            <div className="text-[11px] text-slate-400 font-mono">{r.member_phone}</div>
+                            <button onClick={() => setMember360Id(r.member_id)} className="text-left group">
+                              <div className="font-bold text-white text-sm group-hover:text-amber-300 transition-colors">{r.member_name}</div>
+                              <div className="text-[11px] text-slate-400 font-mono group-hover:text-amber-200/70">{r.member_phone}</div>
+                            </button>
                           </td>
                           <td className="py-3.5 px-4">
                             <span className="font-medium text-slate-200">{r.plan_name}</span>
@@ -627,12 +621,20 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
                             <span className="text-[11px] text-slate-400">Available on 3m, 6m, 12m</span>
                           </td>
                           <td className="py-3.5 px-4 text-right">
-                            <button
-                              onClick={() => setActiveRenewalMember({ id: r.member_id, name: r.member_name })}
-                              className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 text-slate-950 font-bold text-xs transition-all shadow-md shadow-emerald-500/20 cursor-pointer"
-                            >
-                              Process Renewal
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => setMember360Id(r.member_id)}
+                                className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/20 font-bold text-[11px] transition-colors"
+                              >
+                                360°
+                              </button>
+                              <button
+                                onClick={() => setActiveRenewalMember({ id: r.member_id, name: r.member_name })}
+                                className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 text-slate-950 font-bold text-xs transition-all shadow-md shadow-emerald-500/20 cursor-pointer"
+                              >
+                                Renew
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -693,11 +695,11 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
                 {attendance.map((att) => (
                   <div key={att.id} className="py-3 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center text-amber-400 font-bold text-xs">
+                      <button onClick={() => att.member_id && setMember360Id(att.member_id)} className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center text-amber-400 font-bold text-xs hover:bg-slate-700 transition-colors">
                         {att.member_name ? att.member_name.slice(0, 2).toUpperCase() : 'SF'}
-                      </div>
+                      </button>
                       <div>
-                        <div className="font-bold text-white text-xs">{att.member_name}</div>
+                        <button onClick={() => att.member_id && setMember360Id(att.member_id)} className="font-bold text-white text-xs hover:text-amber-300 transition-colors text-left">{att.member_name}</button>
                         <div className="text-[11px] text-slate-400 font-mono">{att.member_phone}</div>
                       </div>
                     </div>
@@ -765,8 +767,10 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
                     {members.map((m) => (
                       <tr key={m.id} className="hover:bg-slate-800/40 transition-colors">
                         <td className="py-3.5 px-4">
-                          <div className="font-bold text-white text-sm">{m.name}</div>
-                          <div className="text-[11px] text-slate-400 font-mono">{m.phone}</div>
+                          <button onClick={() => setMember360Id(m.id)} className="text-left group">
+                            <div className="font-bold text-white text-sm group-hover:text-amber-300 transition-colors">{m.name}</div>
+                            <div className="text-[11px] text-slate-400 font-mono group-hover:text-amber-200/70">{m.phone}</div>
+                          </button>
                         </td>
                         <td className="py-3.5 px-4">
                           <span className="font-medium text-slate-200">{m.plan_name || 'No active plan'}</span>
@@ -794,7 +798,13 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
                           </span>
                         </td>
                         <td className="py-3.5 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => setMember360Id(m.id)}
+                              className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-400/20 to-orange-500/20 hover:from-amber-400/30 hover:to-orange-500/30 text-amber-300 border border-amber-500/30 font-bold text-[11px] transition-colors"
+                            >
+                              360°
+                            </button>
                             <button
                               onClick={() => handleToggleMemberPause(m.id, m.status)}
                               className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs transition-colors"
@@ -805,7 +815,7 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
                               onClick={() => onSwitchToMember && onSwitchToMember(m.id)}
                               className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold transition-colors"
                             >
-                              Simulate App
+                              App
                             </button>
                           </div>
                         </td>
@@ -854,12 +864,10 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
             </div>
           )}
 
-          {/* TAB 7: STAFF ACCESS */}
           {activeTab === 'access' && (
             <StaffAccessPanel currentUser={currentUser} />
           )}
 
-          {/* TAB 8: SETTINGS */}
           {activeTab === 'settings' && gymSettings && (
             <div className="max-w-2xl space-y-4 text-xs">
               <h3 className="text-sm font-bold text-white mb-3">Gym Retention Configuration</h3>
@@ -984,6 +992,30 @@ export default function OwnerDashboard({ onSwitchToMember, currentUser }) {
             showToast(`✅ CSV import done: ${summary.created || 0} created, ${summary.updated || 0} updated, ${summary.skipped || 0} skipped, ${summary.failed || 0} failed.`);
             loadAllData();
           }}
+        />
+      )}
+
+      {member360Id && (
+        <Member360Drawer
+          memberId={member360Id}
+          onClose={() => setMember360Id(null)}
+          onRenewal={(member) => {
+            setMember360Id(null);
+            setActiveRenewalMember(member);
+          }}
+          onFollowUp={(caseItem) => {
+            // Map no-show case to red-list shape for follow-up modal
+            const mapped = {
+              case_id: caseItem.id || caseItem.case_id,
+              member_id: caseItem.member_id,
+              member_name: members.find(m => m.id === caseItem.member_id)?.name || 'Member',
+              member_phone: members.find(m => m.id === caseItem.member_id)?.phone || '',
+              risk_days: caseItem.risk_days,
+              plan_name: '—'
+            };
+            setActiveFollowUpCase(mapped);
+          }}
+          onReceipt={(paymentId) => setActiveReceiptPaymentId(paymentId)}
         />
       )}
 
