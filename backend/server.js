@@ -43,7 +43,16 @@ app.use(helmet({
   },
   // Arena previews are intentionally embedded; CSP above remains the source of truth.
   frameguard: false,
-  crossOriginEmbedderPolicy: false
+  crossOriginEmbedderPolicy: false,
+  // Google Identity Services popup sign-in: accounts.google.com/gsi/transform
+  // posts the credential back via window.opener and closes itself. Helmet's
+  // default COOP 'same-origin' severs window.opener for the popup, leaving it
+  // stuck on a blank white screen. Allow popups to retain their opener, and
+  // use the browser-default referrer policy instead of 'no-referrer' (both per
+  // Google's GIS guidance).
+  // https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid#cross_origin_opener_policy
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
 }));
 app.use(express.json({ limit: '100kb' }));
 if (process.env.NODE_ENV !== 'test') app.use(morgan('dev'));
