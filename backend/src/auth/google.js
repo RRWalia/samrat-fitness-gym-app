@@ -49,7 +49,7 @@ function getClient() {
 
 function assertWellFormedCredential(credential) {
   if (typeof credential !== 'string' || !credential.trim()) {
-    throw new GoogleAuthError('MISSING_CREDENTIAL', 'No Google sign-in token was received. Please try again.', 400);
+    throw new GoogleAuthError('MISSING_CREDENTIAL', 'The server received an empty sign-in request without a Google token. If you are using a custom client, ensure the credential is included.', 400);
   }
   if (credential.length > MAX_CREDENTIAL_LENGTH || credential.split('.').length !== 3) {
     throw new GoogleAuthError('INVALID_CREDENTIAL', 'That Google sign-in token is malformed. Please sign in again.', 400);
