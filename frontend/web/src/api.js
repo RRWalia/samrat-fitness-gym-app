@@ -170,6 +170,15 @@ export async function fetchMemberDetails(id) {
   return apiRequest(`/members/${id}`);
 }
 
+export async function fetchMemberProfile(id) {
+  return apiRequest(`/members/${id}/profile`);
+}
+
+export function formatCurrencyINR(amount) {
+  if (amount === null || amount === undefined) return '—';
+  return `₹${Number(amount).toLocaleString('en-IN')}`;
+}
+
 export async function createMember(data) {
   return apiRequest('/members', { method: 'POST', body: JSON.stringify(data) });
 }
