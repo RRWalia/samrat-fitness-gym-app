@@ -28,7 +28,7 @@ Record Attendance ➔ Detect Risk ➔ Contact Early ➔ Bring Member Back ➔ Co
 
 ## 🔐 Staff Authentication & Role-Based Access
 
-The staff web app now starts at a secure User ID/password portal. Passwords are stored only as bcrypt hashes, successful logins receive short-lived signed JWTs, and every JWT must also map to a live server-side session. Logout, password reset, account deactivation, or a role change revokes access immediately.
+The staff web app signs in with **Google ("Sign in with Google")** — there are no passwords anywhere in the system. The browser hands the API a Google-issued ID token; the server verifies its signature against Google's certificates, checks audience/issuer/expiry, and only then maps it onto a staff account whose Gmail an owner or manager registered. Successful sign-ins receive short-lived signed JWTs, and every JWT must also map to a live server-side session. Logout, Gmail re-linking, account deactivation, or a role change revokes access immediately.
 
 | Staff role | Server-enforced access |
 | :--- | :--- |
@@ -36,25 +36,26 @@ The staff web app now starts at a secure User ID/password portal. Passwords are 
 | **Front Desk** | Rotating QR kiosk, assisted check-in, recent attendance, and a redacted member lookup; financial and settings APIs return `403` |
 | **Trainer** | Only PT orders and member profiles assigned to that account's `trainer_id`; prices and unrelated customers are omitted |
 
-Every `/api/*` business route requires `Authorization: Bearer <token>`. Only `/api/auth/login`, the pre-login `/api/auth/forgot-password` lookup and the metadata-only `/api/health` probe are public. JWTs contain no customer or payment data; HTTPS encrypts them in transit in production.
+Every `/api/*` business route requires `Authorization: Bearer <token>`. Only `POST /api/auth/google`, the metadata-only `GET /api/auth/config` (which exposes the public OAuth client ID so the page can render the button) and the `GET /api/health` probe are public. JWTs contain no customer or payment data; HTTPS encrypts them in transit in production.
 
-### Mobile-number sign-in & password recovery
+### Gmail registration & first sign-in
 
-* Staff can sign in with their **User ID or their registered mobile number** (`98250 11223`, `+91 98250 11223` and `919825011223` all match). Numbers are stored normalised (`+91…`) and are unique per staff account.
-* Register a mobile when creating a staff account (**Staff Access → Add Staff User**) or from the account menu in the header (**Set / Update mobile number**).
-* The login page offers **Forgot password?**: it identifies the matching account by User ID or mobile (name + masked number only, no credential data) and points to the one-click administrator reset in **Staff Access**. No OTP is sent automatically — this deployment is not connected to an SMS/email provider; the API shape is ready to wire one in later.
-* **Locked out of the owner account?** The production owner password is the Render-generated `INITIAL_OWNER_PASSWORD` (see *Lockout recovery* below) — the demo password in this README only applies to fresh non-production databases.
+* An owner or manager registers each team member's **Gmail address** under **Management Dashboard → Staff Access → Add Staff User**, together with their role (and Trainer ID for trainers). Only registered Gmails can sign in; anyone else sees "No staff account is registered for that Gmail."
+* The staff member then opens the app and presses **Continue with Google**. On the first successful sign-in the account is bound to that person's immutable Google subject ID, so a look-alike Google account presenting the same address later is rejected.
+* There is no "forgot password": if someone leaves, disable the account or change its Gmail in Staff Access — both revoke every live session immediately.
+* **Locked out of the owner account?** From the service shell, link the owner's Gmail directly (see *Lockout recovery* below).
 
 ### Lockout recovery (server shell)
 
-If the owner password is lost (for example the Render-generated `INITIAL_OWNER_PASSWORD` was never saved), reset it from the service's shell without knowing the current password:
+If the owner account has no Gmail linked (or it must be re-pointed), attach one from the service's shell:
 
 ```bash
 # Render: service → Web Service → "Shell" (or any host with the app's DB)
-node scripts/resetOwnerPassword.js --username ashish --password 'Ashish@samrat1!'
+node scripts/linkStaffGmail.js --list                          # show accounts
+node scripts/linkStaffGmail.js --email you@gmail.com --user ashish --yes
 ```
 
-The script validates the new password against the security policy, rewrites the bcrypt hash, bumps `token_version`, revokes every active session for that account, and writes an audit-log entry. Confirm the target User ID when prompted (or pass `--yes` for non-interactive runs).
+The script validates the Gmail, checks it is not already registered to someone else, clears any previous Google binding, bumps `token_version`, revokes every active session for that account, and writes an audit-log entry. Pass `--yes` for non-interactive runs.
 
 ### Local development
 
@@ -66,22 +67,21 @@ npm run dev:backend       # API + SQLite on port 5001
 npm run dev:frontend      # Vite UI on port 3000
 ```
 
-`install:all` runs `npm ci --ignore-scripts`. Both native modules (`better-sqlite3`, `bcrypt`) ship prebuilt binaries for glibc *and* musl, so no C toolchain (`python3`/`make`/`g++`) is needed in the build image — keep `--ignore-scripts` in place, otherwise npm synthesises a `node-gyp rebuild` step for `better-sqlite3` and the deploy fails where a compiler is absent.
+`install:all` runs `npm ci --ignore-scripts`. The only native module (`better-sqlite3`) ships prebuilt binaries for glibc *and* musl, so no C toolchain (`python3`/`make`/`g++`) is needed in the build image — keep `--ignore-scripts` in place, otherwise npm synthesises a `node-gyp rebuild` step for `better-sqlite3` and the deploy fails where a compiler is absent.
 
 The frontend install also passes `--include=dev`: `render.yaml` sets `NODE_ENV=production` service-wide, and with that set `npm ci` silently skips `devDependencies` — which is where all the build tooling lives (`vite`, `@vitejs/plugin-react`, `tailwindcss`). Without it, `vite` still arrives as an auto-installed peer of the production package `@tailwindcss/vite`, so the build starts and then dies with `ERR_MODULE_NOT_FOUND: Cannot find package '@vitejs/plugin-react'`. The backend needs no flag — it has no `devDependencies`.
 
-On a new **non-production** database, these demo accounts are created:
+To sign in during local development, set `GOOGLE_CLIENT_ID` in `backend/.env` (a Web OAuth client ID from the Google Cloud console, with `http://localhost:3000` added to its *Authorized JavaScript origins*), and set `INITIAL_OWNER_EMAIL` to **your own Gmail** before the first backend start so the seeded owner account is yours:
 
-| Role | User ID | Password |
-| :--- | :--- | :--- |
-| Owner | `Ashish` | `Ashish@samrat1!` |
-| Manager | `Parmar` | `Manager@2026!` |
-| Front Desk | `frontdesk` | `Desk@2026!Gym` |
-| Trainer — Sona Walia (Trainer ID 101) | `sona.walia` | `Trainer@2026!` |
+```bash
+# backend/.env
+GOOGLE_CLIENT_ID=xxxx.apps.googleusercontent.com
+INITIAL_OWNER_EMAIL=you@gmail.com
+```
 
-These demo passwords are never created automatically in production. For a direct deployment, set a random `JWT_SECRET` (32+ characters) and the required `INITIAL_*_PASSWORD` values before the first production start; see `.env.example`. The Render Blueprint generates independent, high-entropy JWT and bootstrap passwords for all four staff roles—no production password is stored in Git. An authorized Render administrator can reveal/copy those generated `INITIAL_*_PASSWORD` values from the service's **Environment** page.
+On a fresh **non-production** database without explicit `INITIAL_*_EMAIL` values, placeholder staff accounts are created on the reserved `@samratfitness.test` domain (owner `ashish@…`, manager `parmar@…`, front desk `frontdesk@…`, trainer `sona.walia@…`) purely so seeded data has role-scoped users behind it — those addresses cannot pass Google sign-in until you re-link a real Gmail in Staff Access or with `scripts/linkStaffGmail.js`.
 
-If a manually-created Render service starts with an empty production database and no `INITIAL_OWNER_PASSWORD`, the app now creates a secure random owner bootstrap password instead of crashing. Copy the generated `username="..." password="..."` line from the deploy logs, sign in once, and immediately change the password under **Management Dashboard → Staff Access**. Set `STRICT_PRODUCTION_BOOTSTRAP=true` if you prefer production to fail fast until `INITIAL_OWNER_PASSWORD` is configured. Additional accounts can then be managed under **Management Dashboard → Staff Access**.
+For a production deployment set a random `JWT_SECRET` (32+ characters), `GOOGLE_CLIENT_ID`, and `INITIAL_OWNER_EMAIL` (the owner's real Gmail) before the first start; see `.env.example`. The server refuses to boot in production without `GOOGLE_CLIENT_ID`. Add the rest of the team under **Management Dashboard → Staff Access**.
 
 Run the authentication/RBAC integration suite with:
 
@@ -165,17 +165,17 @@ Owners migrating from a spreadsheet or a previous billing tool can load the whol
 ### Core Tables (MySQL / PostgreSQL)
 
 ```sql
--- Staff authentication (actual SQLite implementation)
+-- Staff identities for Google sign-in (actual SQLite implementation).
+-- No credentials are stored: sign-in is delegated to Google.
 CREATE TABLE Users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  username TEXT NOT NULL COLLATE NOCASE UNIQUE,
-  password_hash TEXT NOT NULL,
+  email TEXT COLLATE NOCASE UNIQUE,      -- registered Gmail; NULL until linked
+  google_sub TEXT UNIQUE,                -- Google subject ID bound on first sign-in
   full_name TEXT NOT NULL,
   role TEXT NOT NULL CHECK(role IN ('owner', 'manager', 'front_desk', 'trainer')),
   trainer_id INTEGER,
+  phone TEXT,
   active INTEGER NOT NULL DEFAULT 1,
-  failed_login_attempts INTEGER NOT NULL DEFAULT 0,
-  locked_until TEXT,
   token_version INTEGER NOT NULL DEFAULT 0,
   last_login_at TEXT
 );

@@ -20,29 +20,27 @@ services:
         value: "Asia/Kolkata"
       - key: JWT_SECRET
         generateValue: true
-      - key: INITIAL_OWNER_USERNAME
-        value: "ashish"
+      # Sign in with Google (Web OAuth client ID). REQUIRED: Google is the only
+      # sign-in method. Add the Render service origin to the client's
+      # "Authorized JavaScript origins" in the Google Cloud console.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: INITIAL_OWNER_EMAIL
+        sync: false
       - key: INITIAL_OWNER_NAME
         value: "Ashish"
-      - key: INITIAL_OWNER_PASSWORD
-        generateValue: true
-      - key: INITIAL_MANAGER_USERNAME
-        value: "parmar"
-      - key: INITIAL_MANAGER_NAME
-        value: "Parmar"
-      - key: INITIAL_MANAGER_PASSWORD
-        generateValue: true
-      - key: INITIAL_FRONT_DESK_USERNAME
-        value: "frontdesk"
-      - key: INITIAL_FRONT_DESK_NAME
-        value: "Front Desk Team"
-      - key: INITIAL_FRONT_DESK_PASSWORD
-        generateValue: true
-      - key: INITIAL_TRAINER_USERNAME
-        value: "sona.walia"
-      - key: INITIAL_TRAINER_NAME
-        value: "Sona Walia"
-      - key: INITIAL_TRAINER_ID
-        value: "101"
-      - key: INITIAL_TRAINER_PASSWORD
-        generateValue: true
+      # Optional first-run staff Gmails. Omit any you do not need.
+      # - key: INITIAL_MANAGER_EMAIL
+      #   sync: false
+      # - key: INITIAL_MANAGER_NAME
+      #   value: "Parmar"
+      # - key: INITIAL_FRONT_DESK_EMAIL
+      #   sync: false
+      # - key: INITIAL_FRONT_DESK_NAME
+      #   value: "Front Desk Team"
+      # - key: INITIAL_TRAINER_EMAIL
+      #   sync: false
+      # - key: INITIAL_TRAINER_NAME
+      #   value: "Sona Walia"
+      # - key: INITIAL_TRAINER_ID
+      #   value: "101"

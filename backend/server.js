@@ -25,10 +25,13 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      imgSrc: ["'self'", 'data:', 'https://images.unsplash.com'],
-      connectSrc: ["'self'", 'ws:', 'wss:'],
+      // Google Identity Services serves the Sign-in button, popup, and its
+      // one-tap prompt from accounts.google.com / apis.google.com.
+      scriptSrc: ["'self'", 'https://accounts.google.com', 'https://apis.google.com'],
+      styleSrc: ["'self'", "'unsafe-inline'", 'https://accounts.google.com', 'https://apis.google.com'],
+      imgSrc: ["'self'", 'data:', 'https://images.unsplash.com', 'https://lh3.googleusercontent.com'],
+      connectSrc: ["'self'", 'ws:', 'wss:', 'https://accounts.google.com', 'https://oauth2.googleapis.com'],
+      frameSrc: ["'self'", 'https://accounts.google.com'],
       fontSrc: ["'self'", 'data:'],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],

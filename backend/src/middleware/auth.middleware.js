@@ -20,6 +20,10 @@ function validateAuthConfiguration() {
   if (process.env.NODE_ENV !== 'production' && !secret) {
     console.warn('JWT_SECRET is not set; using the development-only signing key.');
   }
+  // Google is the only sign-in method, so production must have a client ID.
+  if (process.env.NODE_ENV === 'production' && !String(process.env.GOOGLE_CLIENT_ID || '').trim()) {
+    throw new Error('GOOGLE_CLIENT_ID must be configured in production for Google sign-in.');
+  }
 }
 
 function hashJti(jti) {
@@ -30,13 +34,14 @@ function publicUser(user) {
   const details = roleDetails(user.role);
   return {
     id: user.id,
-    username: user.username,
+    email: user.email ?? null,
     fullName: user.full_name,
     role: user.role,
     roleLabel: details.label,
     roleDescription: details.description,
     permissions: details.permissions,
-    trainerId: user.trainer_id ?? null
+    trainerId: user.trainer_id ?? null,
+    phone: user.phone ?? null
   };
 }
 
@@ -72,7 +77,7 @@ function authenticateToken(req, res, next) {
 
     const session = db.prepare(`
       SELECT s.id AS session_id, s.user_id, s.expires_at, s.revoked_at, s.last_seen_at,
-             u.id, u.username, u.full_name, u.role, u.trainer_id, u.active, u.token_version
+             u.id, u.email, u.full_name, u.role, u.trainer_id, u.phone, u.active, u.token_version
       FROM AuthSessions s
       JOIN Users u ON u.id = s.user_id
       WHERE s.jti_hash = ?

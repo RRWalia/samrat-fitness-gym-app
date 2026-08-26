@@ -10,7 +10,7 @@ import {
   clearStoredSession,
   fetchCurrentUser,
   getStoredSession,
-  loginUser,
+  loginWithGoogle,
   logoutUser,
   storeSession
 } from './api';
@@ -117,7 +117,7 @@ export default function App() {
   }, [session?.expiresAt]);
 
   const handleLogin = async (credentials) => {
-    const result = await loginUser(credentials);
+    const result = await loginWithGoogle(credentials);
     if (result.success) {
       const saved = getStoredSession();
       setSession(saved);
@@ -131,12 +131,6 @@ export default function App() {
     try { await logoutUser(); } catch { clearStoredSession(); }
     setSession(null);
     setLoginNotice('You have been signed out securely.');
-  };
-
-  const handlePasswordChanged = () => {
-    clearStoredSession();
-    setSession(null);
-    setLoginNotice('Password updated. All sessions were revoked; sign in with your new password.');
   };
 
   const switchView = (view) => {
@@ -168,7 +162,6 @@ export default function App() {
         user={session.user}
         expiresAt={session.expiresAt}
         onLogout={handleLogout}
-        onPasswordChanged={handlePasswordChanged}
         onRefreshAll={() => setRefreshKey(value => value + 1)}
       />
 
@@ -196,7 +189,7 @@ export default function App() {
 
       <footer className="border-t border-slate-900 bg-slate-950/80 py-5 text-center text-xs text-slate-500">
         <p><strong className="text-slate-400">Samrat Fitness King</strong> · Authenticated staff workspace</p>
-        <p className="mt-1 text-[10px] text-slate-700">Role-scoped access · bcrypt credentials · expiring JWT sessions · audited actions</p>
+        <p className="mt-1 text-[10px] text-slate-700">Role-scoped access · Google sign-in · expiring JWT sessions · audited actions</p>
       </footer>
     </div>
   );

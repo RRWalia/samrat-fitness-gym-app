@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { CheckCircle2, Smartphone, X } from 'lucide-react';
-import { updateStaffUser } from '../api';
+import { updateMyPhone } from '../api';
 
 function formatPhone(phone) {
   if (!phone) return null;
@@ -20,7 +20,7 @@ export default function UpdatePhoneModal({ user, onClose, onSaved }) {
     setSaving(true);
     setError('');
     try {
-      const result = await updateStaffUser(user.id, { phone: phone.trim() });
+      const result = await updateMyPhone(phone.trim());
       if (result.success) {
         setSaved(true);
         window.setTimeout(() => {
@@ -48,7 +48,7 @@ export default function UpdatePhoneModal({ user, onClose, onSaved }) {
             <div>
               <h3 className="text-sm font-bold text-white">Your mobile number</h3>
               <p className="mt-1 text-[10px] leading-4 text-slate-500">
-                Used to sign in instead of your User ID and to identify your account for password recovery.
+                Stored as your contact number for the gym team. Sign-in always happens with Google — no password involved.
               </p>
             </div>
           </div>

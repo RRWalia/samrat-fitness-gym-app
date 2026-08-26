@@ -94,28 +94,33 @@ async function apiTextRequest(path, options = {}) {
   return { success: true, text, httpStatus: response.status };
 }
 
-export async function loginUser({ username, password, rememberMe }) {
-  const result = await apiRequest('/auth/login', {
+// Sign-in configuration for the login screen (no secrets are returned).
+export async function fetchAuthConfig() {
+  return apiRequest('/auth/config', { auth: false, suppressAuthEvent: true });
+}
+
+// Exchanges the Google ID token for an app session. Google is the only
+// credential check; there is no username/password.
+export async function loginWithGoogle({ credential, rememberMe }) {
+  const result = await apiRequest('/auth/google', {
     method: 'POST',
     auth: false,
     suppressAuthEvent: true,
-    body: JSON.stringify({ username, password, rememberMe })
+    body: JSON.stringify({ credential, rememberMe })
   });
   if (result.success) storeSession(result, rememberMe);
   return result;
 }
 
-export async function requestForgotPassword(identifier) {
-  return apiRequest('/auth/forgot-password', {
-    method: 'POST',
-    auth: false,
-    suppressAuthEvent: true,
-    body: JSON.stringify({ identifier })
-  });
-}
-
 export async function fetchCurrentUser() {
   return apiRequest('/auth/me');
+}
+
+export async function updateMyPhone(phone) {
+  return apiRequest('/auth/profile/phone', {
+    method: 'PATCH',
+    body: JSON.stringify({ phone })
+  });
 }
 
 export async function logoutUser() {
@@ -130,13 +135,6 @@ export async function logoutAllSessions() {
   const result = await apiRequest('/auth/logout-all', { method: 'POST' });
   if (result.success) clearStoredSession();
   return result;
-}
-
-export async function changePassword(currentPassword, newPassword) {
-  return apiRequest('/auth/change-password', {
-    method: 'POST',
-    body: JSON.stringify({ currentPassword, newPassword })
-  });
 }
 
 export async function fetchStats() {
@@ -274,8 +272,4 @@ export async function createStaffUser(data) {
 
 export async function updateStaffUser(id, data) {
   return apiRequest(`/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
-}
-
-export async function resetStaffPassword(id, password) {
-  return apiRequest(`/users/${id}/password`, { method: 'PUT', body: JSON.stringify({ password }) });
 }

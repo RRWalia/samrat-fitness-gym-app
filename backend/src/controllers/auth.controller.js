@@ -1,10 +1,9 @@
 const crypto = require('crypto');
-const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { db, logAudit } = require('../config/database');
-const { validatePassword, bcryptRounds } = require('../auth/password');
-const { normalizePhone, maskPhone } = require('../auth/phone');
 const { actorTypeForRole } = require('../auth/roles');
+const { normalizePhone, validatePhone } = require('../auth/phone');
+const { GoogleAuthError, googleClientId, isGoogleLoginConfigured, verifyGoogleCredential } = require('../auth/google');
 const {
   JWT_ISSUER,
   JWT_AUDIENCE,
@@ -13,10 +12,6 @@ const {
   publicUser,
   revokeAllUserSessions
 } = require('../middleware/auth.middleware');
-
-const MAX_FAILED_LOGINS = 5;
-const LOCK_DURATION_MS = 15 * 60 * 1000;
-const DUMMY_HASH = bcrypt.hashSync('invalid-password-comparison-only', bcryptRounds());
 
 function sessionTtlSeconds(rememberMe) {
   const fallback = rememberMe ? 30 * 24 * 60 * 60 : 8 * 60 * 60;
@@ -29,75 +24,93 @@ function safeUserAgent(req) {
   return String(req.get('user-agent') || 'unknown').slice(0, 255);
 }
 
-function genericLoginFailure(res) {
-  return res.status(401).json({
-    success: false,
-    error: 'Invalid username or password.',
-    code: 'INVALID_CREDENTIALS'
-  });
-}
-
-// Staff can sign in with their User ID or their registered mobile number.
-// Usernames are checked first so digit-heavy User IDs keep working.
-function findStaffByIdentifier(identifier) {
-  const value = String(identifier || '').trim();
-  if (!value) return undefined;
-  let user = db.prepare('SELECT * FROM Users WHERE username = ? COLLATE NOCASE LIMIT 1').get(value.toLowerCase());
-  if (!user) {
-    const phone = normalizePhone(value);
-    if (phone) user = db.prepare('SELECT * FROM Users WHERE phone = ? LIMIT 1').get(phone);
-  }
-  return user;
-}
-
 class AuthController {
-  static async login(req, res) {
+  // Sign-in configuration for the login screen. The OAuth client ID is public
+  // by design (Google embeds it in the browser), so it is safe to expose here;
+  // no secret material is ever returned.
+  static config(req, res) {
     res.set('Cache-Control', 'no-store');
-    const identifier = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
-    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    const clientId = googleClientId();
+    return res.json({
+      success: true,
+      googleSignIn: {
+        configured: isGoogleLoginConfigured(),
+        clientId: isGoogleLoginConfigured() ? clientId : null
+      }
+    });
+  }
+
+  // Exchanges a Google ID token ("credential") for an app session. Only Gmail
+  // addresses an administrator registered in Staff Access resolve to an account.
+  static async googleLogin(req, res) {
+    res.set('Cache-Control', 'no-store');
+    const credential = typeof req.body?.credential === 'string' ? req.body.credential : '';
     const rememberMe = req.body?.rememberMe === true;
 
-    // Strict bounds prevent oversized bcrypt work and malformed identifiers.
-    if (!identifier || identifier.length > 40 || !password || password.length > 128) {
-      await bcrypt.compare('invalid', DUMMY_HASH);
-      return genericLoginFailure(res);
+    let identity;
+    try {
+      identity = await verifyGoogleCredential(credential);
+    } catch (error) {
+      if (error instanceof GoogleAuthError) {
+        return res.status(error.status).json({ success: false, error: error.message, code: error.code });
+      }
+      console.error('Google sign-in verification failed:', error);
+      return res.status(500).json({
+        success: false,
+        error: 'Unable to verify Google sign-in right now. Please try again.',
+        code: 'GOOGLE_VERIFICATION_FAILED'
+      });
     }
 
-    const user = findStaffByIdentifier(identifier);
-    const passwordMatches = await bcrypt.compare(password, user?.password_hash || DUMMY_HASH);
     const now = Date.now();
-    const isLocked = Boolean(user?.locked_until && Date.parse(user.locked_until) > now);
+    const issuedAt = new Date(now).toISOString();
+    const user = db.prepare('SELECT * FROM Users WHERE email = ? COLLATE NOCASE LIMIT 1').get(identity.email);
 
-    if (!user || !passwordMatches || !user.active || isLocked) {
-      if (user && user.active && !isLocked) {
-        const previousLockExpired = user.locked_until && Date.parse(user.locked_until) <= now;
-        const failedAttempts = (previousLockExpired ? 0 : user.failed_login_attempts) + 1;
-        const lockedUntil = failedAttempts >= MAX_FAILED_LOGINS
-          ? new Date(now + LOCK_DURATION_MS).toISOString()
-          : null;
+    if (!user) {
+      logAudit(null, 'System', 'Rejected Google Sign-in', 'Users', 0, null, {
+        email: identity.email,
+        reason: 'not_registered'
+      });
+      return res.status(403).json({
+        success: false,
+        code: 'ACCOUNT_NOT_REGISTERED',
+        error: 'No staff account is registered for that Gmail. Ask your gym administrator to add it under Staff Access.'
+      });
+    }
 
-        db.prepare(`
-          UPDATE Users
-          SET failed_login_attempts = ?, locked_until = ?, updated_at = ?
-          WHERE id = ?
-        `).run(failedAttempts, lockedUntil, new Date(now).toISOString(), user.id);
+    // The Google subject ID is bound on first sign-in. A different subject with
+    // the same address means a look-alike account, not the one that was vetted.
+    if (user.google_sub && identity.sub && user.google_sub !== identity.sub) {
+      logAudit(user.id, 'System', 'Rejected Google Sign-in', 'Users', user.id, null, {
+        email: identity.email,
+        reason: 'google_account_mismatch'
+      });
+      return res.status(403).json({
+        success: false,
+        code: 'GOOGLE_ACCOUNT_MISMATCH',
+        error: 'That Gmail is linked to a different Google account. Contact your gym administrator.'
+      });
+    }
 
-        logAudit(user.id, actorTypeForRole(user.role), 'Failed Staff Login', 'Users', user.id, null, {
-          username: user.username,
-          locked: Boolean(lockedUntil)
-        });
-      }
-      return genericLoginFailure(res);
+    if (!user.active) {
+      logAudit(user.id, 'System', 'Rejected Google Sign-in', 'Users', user.id, null, {
+        email: identity.email,
+        reason: 'deactivated'
+      });
+      return res.status(403).json({
+        success: false,
+        code: 'ACCOUNT_DISABLED',
+        error: 'This staff account has been deactivated. Contact your gym administrator.'
+      });
     }
 
     const ttlSeconds = sessionTtlSeconds(rememberMe);
-    const issuedAt = new Date(now).toISOString();
     const expiresAt = new Date(now + ttlSeconds * 1000).toISOString();
     const jti = crypto.randomUUID();
 
     const token = jwt.sign(
       {
-        username: user.username,
+        email: user.email,
         role: user.role,
         trainerId: user.trainer_id ?? null,
         ver: user.token_version
@@ -116,9 +129,9 @@ class AuthController {
     const transaction = db.transaction(() => {
       db.prepare(`
         UPDATE Users
-        SET failed_login_attempts = 0, locked_until = NULL, last_login_at = ?, updated_at = ?
+        SET google_sub = COALESCE(google_sub, ?), last_login_at = ?, updated_at = ?
         WHERE id = ?
-      `).run(issuedAt, issuedAt, user.id);
+      `).run(identity.sub, issuedAt, issuedAt, user.id);
 
       db.prepare(`
         INSERT INTO AuthSessions (user_id, jti_hash, remember_me, issued_at, expires_at, last_seen_at, user_agent)
@@ -136,8 +149,8 @@ class AuthController {
     });
     transaction();
 
-    logAudit(user.id, actorTypeForRole(user.role), 'Staff Login', 'Users', user.id, null, {
-      username: user.username,
+    logAudit(user.id, actorTypeForRole(user.role), 'Staff Google Sign-in', 'Users', user.id, null, {
+      email: user.email,
       role: user.role,
       rememberMe
     });
@@ -160,49 +173,6 @@ class AuthController {
     });
   }
 
-  // Pre-login recovery step: verifies which staff account an identifier
-  // belongs to so the person (or the front desk) can confirm the right
-  // account before an administrator resets the password from Staff Access.
-  // No password or credential data is ever returned.
-  static forgotPassword(req, res) {
-    res.set('Cache-Control', 'no-store');
-    const identifier = typeof req.body?.identifier === 'string' ? req.body.identifier.trim() : '';
-    if (!identifier || identifier.length > 40) {
-      return res.status(400).json({
-        success: false,
-        error: 'Enter your User ID or registered mobile number.'
-      });
-    }
-
-    const user = findStaffByIdentifier(identifier);
-    if (!user || !user.active) {
-      return res.json({
-        success: true,
-        found: false,
-        message: 'We could not find an active staff account with that User ID or mobile number.'
-      });
-    }
-
-    logAudit(null, 'System', 'Password Recovery Request', 'Users', user.id, null, {
-      username: user.username,
-      hasRecoveryMobile: Boolean(user.phone)
-    });
-
-    return res.json({
-      success: true,
-      found: true,
-      message: Boolean(user.phone)
-        ? 'Recovery mobile verified. Your gym administrator can now reset this password immediately.'
-        : 'This account has no recovery mobile on file. Your gym administrator can still reset this password.',
-      account: {
-        fullName: user.full_name,
-        username: user.username,
-        phoneMasked: maskPhone(user.phone),
-        hasRecoveryMobile: Boolean(user.phone)
-      }
-    });
-  }
-
   static logout(req, res) {
     db.prepare(`
       UPDATE AuthSessions
@@ -211,7 +181,7 @@ class AuthController {
     `).run(new Date().toISOString(), req.auth.sessionId);
 
     logAudit(req.user.id, actorTypeForRole(req.user.role), 'Staff Logout', 'Users', req.user.id, null, {
-      username: req.user.username
+      email: req.user.email
     });
 
     return res.json({ success: true, message: 'Signed out securely.' });
@@ -223,38 +193,27 @@ class AuthController {
     return res.json({ success: true, message: 'All sessions have been signed out.' });
   }
 
-  static async changePassword(req, res) {
-    const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
-    const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
-    const policyError = validatePassword(newPassword);
-    if (policyError) return res.status(400).json({ success: false, error: policyError, code: 'WEAK_PASSWORD' });
+  // Self-service contact number. The registered Gmail is not editable here —
+  // only an owner/manager can re-point an account at another Google identity.
+  static updateMyPhone(req, res) {
+    const rawPhone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
+    const phoneError = validatePhone(rawPhone);
+    if (phoneError) return res.status(400).json({ success: false, error: phoneError });
 
-    const user = db.prepare('SELECT * FROM Users WHERE id = ?').get(req.user.id);
-    const currentMatches = await bcrypt.compare(currentPassword, user.password_hash);
-    if (!currentMatches) {
-      return res.status(400).json({ success: false, error: 'Current password is incorrect.', code: 'INVALID_CURRENT_PASSWORD' });
-    }
-    if (await bcrypt.compare(newPassword, user.password_hash)) {
-      return res.status(400).json({ success: false, error: 'New password must be different from the current password.' });
+    const phone = rawPhone ? normalizePhone(rawPhone) : null;
+    if (phone && db.prepare('SELECT id FROM Users WHERE phone = ? AND id != ?').get(phone, req.user.id)) {
+      return res.status(409).json({ success: false, error: 'That mobile number is already linked to another staff account.' });
     }
 
-    const changedAt = new Date().toISOString();
-    const passwordHash = await bcrypt.hash(newPassword, bcryptRounds());
-    const transaction = db.transaction(() => {
-      db.prepare(`
-        UPDATE Users
-        SET password_hash = ?, password_changed_at = ?, token_version = token_version + 1, updated_at = ?
-        WHERE id = ?
-      `).run(passwordHash, changedAt, changedAt, user.id);
-      revokeAllUserSessions(user.id);
-    });
-    transaction();
+    db.prepare('UPDATE Users SET phone = ?, updated_at = ? WHERE id = ?')
+      .run(phone, new Date().toISOString(), req.user.id);
 
-    logAudit(user.id, actorTypeForRole(user.role), 'Change Staff Password', 'Users', user.id);
-    return res.json({
-      success: true,
-      message: 'Password changed. Please sign in again on all devices.'
-    });
+    logAudit(req.user.id, actorTypeForRole(req.user.role), 'Update Staff Contact Mobile', 'Users', req.user.id, {
+      phone: req.user.phone ?? null
+    }, { phone });
+
+    const updated = db.prepare('SELECT * FROM Users WHERE id = ?').get(req.user.id);
+    return res.json({ success: true, message: 'Mobile number updated.', data: publicUser(updated) });
   }
 }
 

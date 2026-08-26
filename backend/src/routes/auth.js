@@ -5,9 +5,9 @@ const { authenticateToken } = require('../middleware/auth.middleware');
 
 const router = express.Router();
 
-const loginLimiter = rateLimit({
+const signInLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 20,
+  limit: 30,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   skipSuccessfulRequests: true,
@@ -18,11 +18,12 @@ const loginLimiter = rateLimit({
   }
 });
 
-router.post('/login', loginLimiter, AuthController.login);
+// Google is the only credential check; the ID token itself is verified upstream.
+router.get('/config', AuthController.config);
+router.post('/google', signInLimiter, AuthController.googleLogin);
 router.get('/me', authenticateToken, AuthController.me);
+router.patch('/profile/phone', authenticateToken, AuthController.updateMyPhone);
 router.post('/logout', authenticateToken, AuthController.logout);
 router.post('/logout-all', authenticateToken, AuthController.logoutAll);
-router.post('/forgot-password', AuthController.forgotPassword);
-router.post('/change-password', authenticateToken, AuthController.changePassword);
 
 module.exports = router;
