@@ -16,10 +16,21 @@ const roleCards = [
 ];
 
 const GIS_SCRIPT = 'https://accounts.google.com/gsi/client';
+const REMEMBER_ME_PREF_KEY = 'samrat_remember_me_pref';
+
+// Keep the "Remember me" choice between visits so it is already settled
+// before the next sign-in (storage may be unavailable, so never throw).
+function readRememberMePref() {
+  try {
+    return window.localStorage.getItem(REMEMBER_ME_PREF_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 export default function LoginScreen({ onLogin, notice }) {
   const [config, setConfig] = useState(null);
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(readRememberMePref);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const buttonRef = useRef(null);
@@ -27,6 +38,15 @@ export default function LoginScreen({ onLogin, notice }) {
   useEffect(() => { rememberRef.current = rememberMe; }, [rememberMe]);
   const onLoginRef = useRef(onLogin);
   useEffect(() => { onLoginRef.current = onLogin; }, [onLogin]);
+
+  const handleRememberChange = (checked) => {
+    setRememberMe(checked);
+    try {
+      window.localStorage.setItem(REMEMBER_ME_PREF_KEY, checked ? '1' : '0');
+    } catch {
+      /* storage unavailable — in-memory state still works for this session */
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -204,16 +224,22 @@ export default function LoginScreen({ onLogin, notice }) {
                   </div>
                 )}
 
-                <label className="flex cursor-pointer items-start gap-3 py-1">
+                <label className="relative z-10 flex cursor-pointer select-none items-start gap-3 rounded-xl border border-slate-700/70 bg-slate-900/60 p-3 transition-colors hover:border-amber-400/50 hover:bg-slate-900">
                   <input
                     type="checkbox"
                     checked={rememberMe}
-                    onChange={(event) => setRememberMe(event.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-slate-600 bg-slate-900 accent-amber-400"
+                    onChange={(event) => handleRememberChange(event.target.checked)}
+                    className="peer sr-only"
                   />
+                  <span
+                    aria-hidden="true"
+                    className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 border-slate-500 bg-slate-950 text-transparent transition-colors peer-checked:border-amber-400 peer-checked:bg-amber-400 peer-checked:text-slate-950 peer-focus-visible:ring-2 peer-focus-visible:ring-amber-400/60 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-slate-950"
+                  >
+                    <Check className="h-3.5 w-3.5" strokeWidth={3.5} />
+                  </span>
                   <span>
-                    <span className="block text-xs font-semibold text-slate-300">Remember me on this device</span>
-                    <span className="block text-[10px] leading-4 text-slate-500">Keeps your session for up to 30 days instead of 8 hours.</span>
+                    <span className="block text-xs font-semibold text-slate-200">Remember me on this device</span>
+                    <span className="mt-0.5 block text-[10px] leading-4 text-slate-500">Keeps your session for up to 30 days instead of 8 hours.</span>
                   </span>
                 </label>
               </div>
