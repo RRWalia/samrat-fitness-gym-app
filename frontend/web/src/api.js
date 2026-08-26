@@ -101,12 +101,12 @@ export async function fetchAuthConfig() {
 
 // Exchanges the Google ID token for an app session. Google is the only
 // credential check; there is no username/password.
-export async function loginWithGoogle({ credential, rememberMe }) {
+export async function loginWithGoogle({ credential, rememberMe, selectedRole }) {
   const result = await apiRequest('/auth/google', {
     method: 'POST',
     auth: false,
     suppressAuthEvent: true,
-    body: JSON.stringify({ credential, rememberMe })
+    body: JSON.stringify({ credential, rememberMe, selectedRole })
   });
   if (result.success) storeSession(result, rememberMe);
   return result;

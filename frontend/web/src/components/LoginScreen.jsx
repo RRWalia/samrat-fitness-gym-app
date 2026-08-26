@@ -9,14 +9,33 @@ import {
 } from 'lucide-react';
 import { fetchAuthConfig } from '../api';
 
-const roleCards = [
-  { icon: Crown, label: 'Owner / Manager', detail: 'Financials, members & settings', color: 'text-amber-300 bg-amber-400/10 border-amber-400/20' },
-  { icon: Building2, label: 'Front Desk', detail: 'Check-ins & assisted lookup', color: 'text-sky-300 bg-sky-400/10 border-sky-400/20' },
-  { icon: Dumbbell, label: 'Trainer', detail: 'Assigned PT clients only', color: 'text-violet-300 bg-violet-400/10 border-violet-400/20' }
+const ROLE_OPTIONS = [
+  {
+    id: 'owner_manager',
+    icon: Crown,
+    label: 'Owner / Manager',
+    detail: 'Financials, members & settings',
+    color: 'text-amber-300 bg-amber-400/10 border-amber-400/20'
+  },
+  {
+    id: 'front_desk',
+    icon: Building2,
+    label: 'Front Desk',
+    detail: 'Check-ins & assisted lookup',
+    color: 'text-sky-300 bg-sky-400/10 border-sky-400/20'
+  },
+  {
+    id: 'trainer',
+    icon: Dumbbell,
+    label: 'Trainer',
+    detail: 'Assigned PT clients only',
+    color: 'text-violet-300 bg-violet-400/10 border-violet-400/20'
+  }
 ];
 
 const GIS_SCRIPT = 'https://accounts.google.com/gsi/client';
 const REMEMBER_ME_PREF_KEY = 'samrat_remember_me_pref';
+const ROLE_PREF_KEY = 'samrat_selected_role_pref';
 
 // Keep the "Remember me" choice between visits so it is already settled
 // before the next sign-in (storage may be unavailable, so never throw).
@@ -28,14 +47,32 @@ function readRememberMePref() {
   }
 }
 
+function readRolePref() {
+  try {
+    const saved = window.localStorage.getItem(ROLE_PREF_KEY);
+    if (saved && ROLE_OPTIONS.some(option => option.id === saved)) {
+      return saved;
+    }
+  } catch {
+    /* storage unavailable */
+  }
+  return 'owner_manager';
+}
+
 export default function LoginScreen({ onLogin, notice }) {
   const [config, setConfig] = useState(null);
   const [rememberMe, setRememberMe] = useState(readRememberMePref);
+  const [selectedRole, setSelectedRole] = useState(readRolePref);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const buttonRef = useRef(null);
+
   const rememberRef = useRef(rememberMe);
   useEffect(() => { rememberRef.current = rememberMe; }, [rememberMe]);
+
+  const selectedRoleRef = useRef(selectedRole);
+  useEffect(() => { selectedRoleRef.current = selectedRole; }, [selectedRole]);
+
   const onLoginRef = useRef(onLogin);
   useEffect(() => { onLoginRef.current = onLogin; }, [onLogin]);
 
@@ -45,6 +82,15 @@ export default function LoginScreen({ onLogin, notice }) {
       window.localStorage.setItem(REMEMBER_ME_PREF_KEY, checked ? '1' : '0');
     } catch {
       /* storage unavailable — in-memory state still works for this session */
+    }
+  };
+
+  const handleRoleChange = (roleId) => {
+    setSelectedRole(roleId);
+    try {
+      window.localStorage.setItem(ROLE_PREF_KEY, roleId);
+    } catch {
+      /* storage unavailable */
     }
   };
 
@@ -73,7 +119,11 @@ export default function LoginScreen({ onLogin, notice }) {
           setLoading(true);
           setError('');
           try {
-            const result = await onLoginRef.current({ credential: response.credential, rememberMe: rememberRef.current });
+            const result = await onLoginRef.current({
+              credential: response.credential,
+              rememberMe: rememberRef.current,
+              selectedRole: selectedRoleRef.current
+            });
             if (!result?.success) setError(result?.error || 'Unable to sign in with Google. Please try again.');
           } catch {
             setError('Unable to reach the secure server. Check your connection and try again.');
@@ -136,7 +186,7 @@ export default function LoginScreen({ onLogin, notice }) {
             </div>
           </div>
 
-          <div className="mb-10">
+          <div className="mb-8">
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-semibold text-emerald-300">
               <ShieldCheck className="h-3.5 w-3.5" />
               Google-secured staff workspace
@@ -150,19 +200,51 @@ export default function LoginScreen({ onLogin, notice }) {
             </p>
           </div>
 
-          <div className="grid gap-3">
-            {roleCards.map(({ icon: Icon, label, detail, color }) => (
-              <div key={label} className="flex items-center gap-4 rounded-2xl border border-white/[0.07] bg-white/[0.035] p-4 backdrop-blur-sm">
-                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${color}`}>
-                  <Icon className="h-5 w-5" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-bold text-white">{label}</p>
-                  <p className="mt-0.5 text-xs text-slate-500">{detail}</p>
-                </div>
-                <Check className="h-4 w-4 text-slate-600" />
-              </div>
-            ))}
+          <div className="space-y-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-amber-300/80">
+              Select your role before signing in
+            </p>
+            <div className="grid gap-3" role="radiogroup" aria-label="Select role (desktop)">
+              {ROLE_OPTIONS.map(({ id, icon: Icon, label, detail, color }) => {
+                const isSelected = selectedRole === id;
+                return (
+                  <label
+                    key={id}
+                    className={`flex cursor-pointer select-none items-center gap-4 rounded-2xl border p-4 backdrop-blur-sm transition-all ${
+                      isSelected
+                        ? 'border-amber-400/80 bg-amber-400/10 shadow-lg shadow-amber-500/10 ring-1 ring-amber-400/30'
+                        : 'border-white/[0.07] bg-white/[0.035] hover:border-white/20 hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="staff-role-desktop"
+                      value={id}
+                      checked={isSelected}
+                      onChange={() => handleRoleChange(id)}
+                      className="sr-only"
+                    />
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${isSelected ? 'border-amber-400/40 bg-amber-400/20 text-amber-300' : color}`}>
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <div className="flex-1">
+                      <p className={`text-sm font-bold ${isSelected ? 'text-white' : 'text-slate-200'}`}>{label}</p>
+                      <p className="mt-0.5 text-xs text-slate-400">{detail}</p>
+                    </div>
+                    <div
+                      aria-hidden="true"
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-all ${
+                        isSelected
+                          ? 'border-amber-400 bg-amber-400 text-slate-950 shadow-sm shadow-amber-400/50'
+                          : 'border-slate-700 bg-slate-900/60 text-slate-600'
+                      }`}
+                    >
+                      <Check className="h-3.5 w-3.5" strokeWidth={3.5} />
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
           </div>
         </section>
 
@@ -196,6 +278,45 @@ export default function LoginScreen({ onLogin, notice }) {
                 {error}
               </div>
             )}
+
+            {/* Compact mobile role selector (visible only on screens smaller than lg) */}
+            <div className="mb-6 lg:hidden">
+              <p className="mb-2 text-xs font-semibold text-slate-300">Select your role:</p>
+              <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Select role (mobile)">
+                {ROLE_OPTIONS.map(({ id, icon: Icon, label }) => {
+                  const isSelected = selectedRole === id;
+                  return (
+                    <label
+                      key={id}
+                      className={`relative flex cursor-pointer select-none flex-col items-center justify-center rounded-xl border p-2.5 text-center transition-all ${
+                        isSelected
+                          ? 'border-amber-400 bg-amber-400/15 text-white shadow-sm shadow-amber-400/20 ring-1 ring-amber-400/30'
+                          : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="staff-role-mobile"
+                        value={id}
+                        checked={isSelected}
+                        onChange={() => handleRoleChange(id)}
+                        className="sr-only"
+                      />
+                      <Icon className={`mb-1.5 h-4 w-4 ${isSelected ? 'text-amber-300' : 'text-slate-400'}`} />
+                      <span className="text-[11px] font-bold leading-tight">{label}</span>
+                      {isSelected && (
+                        <span
+                          aria-hidden="true"
+                          className="absolute top-1 right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-400 text-slate-950 shadow-sm"
+                        >
+                          <Check className="h-2.5 w-2.5" strokeWidth={3.5} />
+                        </span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
 
             {config === null && (
               <div className="flex h-24 items-center justify-center">

@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { db, logAudit } = require('../config/database');
-const { actorTypeForRole } = require('../auth/roles');
+const { actorTypeForRole, validateRoleSelection } = require('../auth/roles');
 const { normalizePhone, validatePhone } = require('../auth/phone');
 const { GoogleAuthError, googleClientId, isGoogleLoginConfigured, verifyGoogleCredential } = require('../auth/google');
 const {
@@ -46,6 +46,7 @@ class AuthController {
     res.set('Cache-Control', 'no-store');
     const credential = typeof req.body?.credential === 'string' ? req.body.credential : '';
     const rememberMe = req.body?.rememberMe === true;
+    const selectedRole = typeof req.body?.selectedRole === 'string' ? req.body.selectedRole.trim() : null;
 
     let identity;
     try {
@@ -104,6 +105,21 @@ class AuthController {
       });
     }
 
+    const roleCheck = validateRoleSelection(user.role, selectedRole);
+    if (!roleCheck.valid) {
+      logAudit(user.id, 'System', 'Rejected Google Sign-in', 'Users', user.id, null, {
+        email: identity.email,
+        reason: 'role_mismatch',
+        selectedRole,
+        registeredRole: user.role
+      });
+      return res.status(403).json({
+        success: false,
+        code: 'ROLE_MISMATCH',
+        error: roleCheck.error
+      });
+    }
+
     const ttlSeconds = sessionTtlSeconds(rememberMe);
     const expiresAt = new Date(now + ttlSeconds * 1000).toISOString();
     const jti = crypto.randomUUID();
@@ -152,6 +168,7 @@ class AuthController {
     logAudit(user.id, actorTypeForRole(user.role), 'Staff Google Sign-in', 'Users', user.id, null, {
       email: user.email,
       role: user.role,
+      ...(selectedRole ? { selectedRole } : {}),
       rememberMe
     });
 
