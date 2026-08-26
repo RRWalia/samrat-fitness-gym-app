@@ -1,191 +1,103 @@
-const bcrypt = require('bcrypt');
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
-const { db, dbPath, initDatabase, logAudit } = require('./database');
-const { validatePassword, bcryptRounds } = require('../auth/password');
+const { db, initDatabase, logAudit } = require('./database');
+const { normalizeEmail, validateEmail } = require('../auth/email');
 
-function getBootstrapPasswordFile() {
-  return process.env.INITIAL_OWNER_PASSWORD_FILE
-    ? path.resolve(process.env.INITIAL_OWNER_PASSWORD_FILE)
-    : path.join(path.dirname(dbPath), '.initial-owner-password');
-}
+// Reserved for documentation/testing: addresses on this domain exist so a fresh
+// development database has staff behind its seeded data, but no real Google
+// account can present them. Link a real Gmail before expecting a sign-in.
+const DEMO_GOOGLE_DOMAIN = 'samratfitness.test';
 
-function generateOwnerBootstrapPassword(username) {
-  const password = `SFK-${crypto.randomBytes(24).toString('base64url')}-Aa1!`;
-  const passwordFile = getBootstrapPasswordFile();
-
-  try {
-    fs.mkdirSync(path.dirname(passwordFile), { recursive: true });
-    fs.writeFileSync(passwordFile, `${password}\n`, { mode: 0o600, flag: 'wx' });
-    console.warn(`INITIAL_OWNER_PASSWORD is not set. Generated a secure bootstrap owner password for "${username}" and saved it to ${passwordFile}.`);
-  } catch (err) {
-    if (err.code === 'EEXIST') {
-      try {
-        const savedPassword = fs.readFileSync(passwordFile, 'utf8').trim();
-        if (savedPassword) {
-          console.warn(`INITIAL_OWNER_PASSWORD is not set. Reusing generated bootstrap owner password from ${passwordFile}.`);
-          console.warn(`Generated owner login: username="${username}" password="${savedPassword}"`);
-          return savedPassword;
-        }
-      } catch (readErr) {
-        console.warn(`Existing bootstrap password file could not be read: ${readErr.message}`);
-      }
-    }
-    console.warn(`INITIAL_OWNER_PASSWORD is not set and the generated password could not be saved (${err.message}). The password below is the only copy.`);
+const BOOTSTRAP_ACCOUNTS = [
+  {
+    role: 'owner',
+    localPart: 'ashish',
+    emailEnv: 'INITIAL_OWNER_EMAIL',
+    nameEnv: 'INITIAL_OWNER_NAME',
+    defaultName: 'Ashish',
+    trainerIdEnv: null
+  },
+  {
+    role: 'manager',
+    localPart: 'parmar',
+    emailEnv: 'INITIAL_MANAGER_EMAIL',
+    nameEnv: 'INITIAL_MANAGER_NAME',
+    defaultName: 'Parmar',
+    trainerIdEnv: null
+  },
+  {
+    role: 'front_desk',
+    localPart: 'frontdesk',
+    emailEnv: 'INITIAL_FRONT_DESK_EMAIL',
+    nameEnv: 'INITIAL_FRONT_DESK_NAME',
+    defaultName: 'Front Desk Team',
+    trainerIdEnv: null
+  },
+  {
+    role: 'trainer',
+    localPart: 'sona.walia',
+    emailEnv: 'INITIAL_TRAINER_EMAIL',
+    nameEnv: 'INITIAL_TRAINER_NAME',
+    defaultName: 'Sona Walia',
+    trainerIdEnv: 'INITIAL_TRAINER_ID'
   }
+];
 
-  console.warn(`Generated owner login: username="${username}" password="${password}"`);
-  console.warn('After first login, change this password in Staff Access or set INITIAL_OWNER_PASSWORD in the Render environment before recreating the database.');
-  return password;
-}
-
-function resolveOwnerPassword(username, isProduction) {
-  if (process.env.INITIAL_OWNER_PASSWORD) return process.env.INITIAL_OWNER_PASSWORD;
-  if (!isProduction) return 'Ashish@samrat1!';
-
-  if (process.env.STRICT_PRODUCTION_BOOTSTRAP === 'true') {
-    throw new Error('INITIAL_OWNER_PASSWORD is required when creating the first production owner account.');
-  }
-
-  return generateOwnerBootstrapPassword(username);
-}
-
+// Creates the first staff accounts on an empty Users table. Each account is a
+// Gmail address plus a role: there is no password to generate or store.
 function seedAuthUsers() {
   const userCount = db.prepare('SELECT COUNT(*) AS count FROM Users').get().count;
   if (userCount > 0) return;
 
   const isProduction = process.env.NODE_ENV === 'production';
-  const ownerUsername = process.env.INITIAL_OWNER_USERNAME || 'ashish';
-  const ownerPassword = resolveOwnerPassword(ownerUsername, isProduction);
-
-  const candidates = [
-    {
-      username: ownerUsername,
-      password: ownerPassword,
-      fullName: process.env.INITIAL_OWNER_NAME || 'Ashish',
-      role: 'owner',
-      trainerId: null
-    },
-    {
-      username: process.env.INITIAL_MANAGER_USERNAME || 'parmar',
-      password: process.env.INITIAL_MANAGER_PASSWORD || (!isProduction ? 'Manager@2026!' : null),
-      fullName: process.env.INITIAL_MANAGER_NAME || 'Parmar',
-      role: 'manager',
-      trainerId: null
-    },
-    {
-      username: process.env.INITIAL_FRONT_DESK_USERNAME || 'frontdesk',
-      password: process.env.INITIAL_FRONT_DESK_PASSWORD || (!isProduction ? 'Desk@2026!Gym' : null),
-      fullName: process.env.INITIAL_FRONT_DESK_NAME || 'Front Desk Team',
-      role: 'front_desk',
-      trainerId: null
-    },
-    {
-      username: process.env.INITIAL_TRAINER_USERNAME || 'sona.walia',
-      password: process.env.INITIAL_TRAINER_PASSWORD || (!isProduction ? 'Trainer@2026!' : null),
-      fullName: process.env.INITIAL_TRAINER_NAME || 'Sona Walia',
-      role: 'trainer',
-      trainerId: Number(process.env.INITIAL_TRAINER_ID || 101)
+  const accounts = BOOTSTRAP_ACCOUNTS.map(account => {
+    const rawEmail = String(process.env[account.emailEnv] || '').trim();
+    const email = rawEmail ? normalizeEmail(rawEmail) : (isProduction ? null : `${account.localPart}@${DEMO_GOOGLE_DOMAIN}`);
+    if (rawEmail && !email) {
+      throw new Error(`${account.emailEnv} is not a valid email address: ${validateEmail(rawEmail)}`);
     }
-  ].filter(user => user.password);
+    return {
+      email,
+      fullName: String(process.env[account.nameEnv] || account.defaultName).trim().slice(0, 100) || account.defaultName,
+      role: account.role,
+      trainerId: account.trainerIdEnv ? Number(process.env[account.trainerIdEnv] || 101) : null
+    };
+  }).filter(account => account.email);
 
-  for (const user of candidates) {
-    const passwordError = validatePassword(user.password);
-    if (passwordError) {
-      throw new Error(`Initial password for ${user.username} is not secure: ${passwordError}`);
+  const owner = accounts.find(account => account.role === 'owner');
+  if (!owner) {
+    if (isProduction) {
+      throw new Error('INITIAL_OWNER_EMAIL is required to create the first production owner account.');
     }
+    throw new Error('At least one owner Gmail (INITIAL_OWNER_EMAIL) is required to bootstrap staff access.');
+  }
+  if (isProduction && process.env.STRICT_PRODUCTION_BOOTSTRAP === 'true' && accounts.length === 1) {
+    console.warn('Only the owner account was created. Add the rest of the team under Staff Access.');
   }
 
   const insertUser = db.prepare(`
-    INSERT INTO Users (username, password_hash, full_name, role, trainer_id, active)
-    VALUES (?, ?, ?, ?, ?, 1)
+    INSERT INTO Users (email, full_name, role, trainer_id, active)
+    VALUES (?, ?, ?, ?, 1)
   `);
 
   const transaction = db.transaction(() => {
-    for (const user of candidates) {
-      insertUser.run(
-        user.username.trim().toLowerCase(),
-        bcrypt.hashSync(user.password, bcryptRounds()),
-        user.fullName.trim(),
-        user.role,
-        user.trainerId
-      );
+    for (const account of accounts) {
+      insertUser.run(account.email, account.fullName, account.role, account.trainerId);
     }
   });
-
   transaction();
-  console.log(`Created ${candidates.length} initial role-based staff account(s).`);
+
+  logAudit(null, 'System', 'Bootstrap Staff Access', 'Users', 0, null, {
+    accounts: accounts.map(account => ({ email: account.email, role: account.role }))
+  });
+
+  console.log(`Created ${accounts.length} staff account(s) for Google sign-in: ${accounts.map(account => account.email).join(', ')}`);
+  const unlinked = accounts.filter(account => account.email.endsWith(`@${DEMO_GOOGLE_DOMAIN}`));
+  if (unlinked.length) {
+    console.warn(`${unlinked.length} demo Gmail address(es) cannot sign in yet — link a real Gmail in Staff Access or with scripts/linkStaffGmail.js.`);
+  }
 }
 
-function migrateLegacyStaffIdentities() {
-  const migrations = [
-    {
-      oldUsername: 'owner',
-      newUsername: 'ashish',
-      fullName: 'Ashish',
-      role: 'owner',
-      legacyNames: ['Samrat Gym Owner']
-    },
-    {
-      oldUsername: 'manager',
-      newUsername: 'parmar',
-      fullName: 'Parmar',
-      role: 'manager',
-      legacyNames: ['Gym Manager']
-    },
-    {
-      oldUsername: 'trainer.aryan',
-      newUsername: 'sona.walia',
-      fullName: 'Sona Walia',
-      role: 'trainer',
-      legacyNames: ['Coach Aryan']
-    }
-  ];
-
-  for (const migration of migrations) {
-    const legacy = db.prepare('SELECT * FROM Users WHERE username = ? COLLATE NOCASE AND role = ?')
-      .get(migration.oldUsername, migration.role);
-    const target = db.prepare('SELECT * FROM Users WHERE username = ? COLLATE NOCASE AND role = ?')
-      .get(migration.newUsername, migration.role);
-
-    if (legacy && !target) {
-      const changedAt = new Date().toISOString();
-      const tx = db.transaction(() => {
-        db.prepare(`
-          UPDATE Users
-          SET username = ?, full_name = ?, token_version = token_version + 1, updated_at = ?
-          WHERE id = ?
-        `).run(migration.newUsername, migration.fullName, changedAt, legacy.id);
-        db.prepare(`
-          UPDATE AuthSessions SET revoked_at = COALESCE(revoked_at, ?)
-          WHERE user_id = ? AND revoked_at IS NULL
-        `).run(changedAt, legacy.id);
-      });
-      tx();
-      logAudit(null, 'System', 'Migrate Staff Identity', 'Users', legacy.id,
-        { username: migration.oldUsername, fullName: legacy.full_name },
-        { username: migration.newUsername, fullName: migration.fullName });
-      console.log(`Updated staff login ${migration.oldUsername} → ${migration.newUsername}.`);
-    } else if (legacy && target && legacy.id !== target.id) {
-      // If the requested identity already exists, retire the legacy login rather than retaining duplicate access.
-      const changedAt = new Date().toISOString();
-      db.transaction(() => {
-        db.prepare(`
-          UPDATE Users SET active = 0, token_version = token_version + 1, updated_at = ? WHERE id = ?
-        `).run(changedAt, legacy.id);
-        db.prepare(`
-          UPDATE AuthSessions SET revoked_at = COALESCE(revoked_at, ?)
-          WHERE user_id = ? AND revoked_at IS NULL
-        `).run(changedAt, legacy.id);
-      })();
-    } else if (target && migration.legacyNames.includes(target.full_name)) {
-      db.prepare('UPDATE Users SET full_name = ?, updated_at = ? WHERE id = ?')
-        .run(migration.fullName, new Date().toISOString(), target.id);
-    }
-  }
-
-  // Keep seeded PT content aligned with the renamed trainer on existing databases.
+// Renames seeded content that still refers to the retired trainer name.
+function migrateLegacyContentNames() {
   db.prepare("UPDATE AddOns SET title = replace(title, 'Coach Aryan', 'Sona Walia') WHERE title LIKE '%Coach Aryan%'").run();
   db.prepare("UPDATE FollowUps SET notes = replace(notes, 'Coach Aryan', 'Sona Walia') WHERE notes LIKE '%Coach Aryan%'").run();
 }
@@ -193,7 +105,7 @@ function migrateLegacyStaffIdentities() {
 function seedDatabase() {
   initDatabase();
   seedAuthUsers();
-  migrateLegacyStaffIdentities();
+  migrateLegacyContentNames();
 
   // Check if members already seeded
   const memberCount = db.prepare('SELECT COUNT(*) as count FROM Members').get().count;

@@ -67,10 +67,10 @@ router.get('/dashboard/audit-logs', fullAccess, DashboardController.getAuditLogs
 router.get('/dashboard/settings', fullAccess, DashboardController.getSettings);
 router.put('/dashboard/settings', fullAccess, DashboardController.updateSettings);
 
-// Credential hashes are never returned by these owner/manager-only endpoints.
+// Staff directory. Access is granted by Google sign-in, so these endpoints only
+// manage which Gmail address may sign in and with which role.
 router.get('/users', fullAccess, UsersController.list);
 router.post('/users', fullAccess, UsersController.create);
 router.patch('/users/:id', fullAccess, UsersController.update);
-router.put('/users/:id/password', fullAccess, UsersController.resetPassword);
 
 module.exports = router;

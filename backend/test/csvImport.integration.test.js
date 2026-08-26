@@ -7,7 +7,32 @@ const dbFile = path.join(__dirname, `.csv-import-integration-${process.pid}.db`)
 process.env.NODE_ENV = 'test';
 process.env.DB_PATH = dbFile;
 process.env.JWT_SECRET = 'csv-import-integration-secret-with-more-than-thirty-two-characters';
-process.env.BCRYPT_ROUNDS = '4';
+
+// Sign in with Google fixtures (see auth.integration.test.js): mint RS256 ID
+// tokens locally and stub Google's certificate endpoint so the real
+// google-auth-library verification path runs without contacting Google.
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const GOOGLE_CLIENT_ID = 'csv-test-client-id.apps.googleusercontent.com';
+process.env.GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID;
+const { OAuth2Client } = require('google-auth-library');
+const KEY_ID = 'csv-test-key';
+const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+});
+OAuth2Client.prototype.getFederatedSignonCertsAsync = async function certStub() {
+  return { certs: { [KEY_ID]: publicKey } };
+};
+function mintIdToken(email) {
+  const now = Math.floor(Date.now() / 1000);
+  return jwt.sign(
+    { iss: 'https://accounts.google.com', aud: GOOGLE_CLIENT_ID, sub: `sub-${email}`, email, email_verified: true, name: email, iat: now - 10, exp: now + 3600 },
+    privateKey,
+    { algorithm: 'RS256', header: { alg: 'RS256', typ: 'JWT', kid: KEY_ID } }
+  );
+}
 
 const { app } = require('../server');
 const { db } = require('../src/config/database');
@@ -36,8 +61,8 @@ function request(baseUrl, route, { token, method = 'GET', body } = {}) {
   });
 }
 
-function login(baseUrl, username, password) {
-  return request(baseUrl, '/api/auth/login', { method: 'POST', body: { username, password, rememberMe: false } });
+function login(baseUrl, email) {
+  return request(baseUrl, '/api/auth/google', { method: 'POST', body: { credential: mintIdToken(email) } });
 }
 
 test('CSV bulk import endpoint, role boundary, and audit trail', async t => {
@@ -46,8 +71,10 @@ test('CSV bulk import endpoint, role boundary, and audit trail', async t => {
   });
   const baseUrl = `http://127.0.0.1:${server.address().port}`;
 
-  const ownerToken = (await login(baseUrl, 'ashish', 'Ashish@samrat1!')).data.token;
-  const deskToken = (await login(baseUrl, 'frontdesk', 'Desk@2026!Gym')).data.token;
+  const ownerEmail = db.prepare("SELECT email FROM Users WHERE role = 'owner'").get().email;
+  const deskEmail = db.prepare("SELECT email FROM Users WHERE role = 'front_desk'").get().email;
+  const ownerToken = (await login(baseUrl, ownerEmail)).data.token;
+  const deskToken = (await login(baseUrl, deskEmail)).data.token;
   assert.ok(ownerToken && deskToken);
 
   await t.test('the sample template downloads with the seeded plan names', async () => {

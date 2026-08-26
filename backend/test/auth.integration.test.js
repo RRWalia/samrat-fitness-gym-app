@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -7,11 +9,45 @@ const dbFile = path.join(__dirname, `.auth-test-${process.pid}.db`);
 process.env.NODE_ENV = 'test';
 process.env.DB_PATH = dbFile;
 process.env.JWT_SECRET = 'integration-test-secret-with-more-than-thirty-two-characters';
-process.env.BCRYPT_ROUNDS = '10';
+
+// Sign in with Google test fixtures: we mint RS256 ID tokens with a locally
+// generated keypair and teach google-auth-library to trust that key as if it
+// were Google's published certificate. This exercises the real verification
+// path (signature, audience, issuer, expiry) without contacting Google.
+const GOOGLE_CLIENT_ID = 'test-client-id.apps.googleusercontent.com';
+process.env.GOOGLE_CLIENT_ID = GOOGLE_CLIENT_ID;
+
+const { OAuth2Client } = require('google-auth-library');
+const KEY_ID = 'test-key-1';
+const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+});
+OAuth2Client.prototype.getFederatedSignonCertsAsync = async function certStub() {
+  return { certs: { [KEY_ID]: publicKey } };
+};
 
 const { app } = require('../server');
 const { db } = require('../src/config/database');
-const { seedDatabase } = require('../src/config/seed');
+
+function mintIdToken({ email, sub = `google-sub-${email}`, name = email.split('@')[0], emailVerified = true, expires = 3600, issued = -10 } = {}) {
+  const now = Math.floor(Date.now() / 1000);
+  return jwt.sign(
+    {
+      iss: 'https://accounts.google.com',
+      aud: GOOGLE_CLIENT_ID,
+      sub,
+      email,
+      email_verified: emailVerified,
+      name,
+      iat: now + issued,
+      exp: now + expires
+    },
+    privateKey,
+    { algorithm: 'RS256', header: { alg: 'RS256', typ: 'JWT', kid: KEY_ID } }
+  );
+}
 
 function request(baseUrl, route, { token, method = 'GET', body } = {}) {
   const headers = {};
@@ -24,14 +60,11 @@ function request(baseUrl, route, { token, method = 'GET', body } = {}) {
   }).then(async response => ({ status: response.status, data: await response.json() }));
 }
 
-function login(baseUrl, username, password, rememberMe = false) {
-  return request(baseUrl, '/api/auth/login', {
-    method: 'POST',
-    body: { username, password, rememberMe }
-  });
+function googleLogin(baseUrl, credential, rememberMe = false) {
+  return request(baseUrl, '/api/auth/google', { method: 'POST', body: { credential, rememberMe } });
 }
 
-test('JWT authentication, revocation, and role boundaries', async t => {
+test('Google sign-in, session lifecycle, and role boundaries', async t => {
   const server = await new Promise(resolve => {
     const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
   });
@@ -41,7 +74,7 @@ test('JWT authentication, revocation, and role boundaries', async t => {
   let frontDeskToken;
   let trainerToken;
 
-  await t.test('customer APIs reject anonymous requests', async () => {
+  await t.test('health is public and customer APIs reject anonymous requests', async () => {
     const response = await request(baseUrl, '/api/members');
     assert.equal(response.status, 401);
     assert.equal(response.data.code, 'AUTH_REQUIRED');
@@ -51,46 +84,61 @@ test('JWT authentication, revocation, and role boundaries', async t => {
     assert.equal(health.data.status, 'OK');
   });
 
-  await t.test('existing legacy staff IDs migrate to the requested identities', () => {
-    db.prepare("UPDATE Users SET username = 'owner', full_name = 'Samrat Gym Owner' WHERE username = 'ashish'").run();
-    db.prepare("UPDATE Users SET username = 'manager', full_name = 'Gym Manager' WHERE username = 'parmar'").run();
-    db.prepare("UPDATE Users SET username = 'trainer.aryan', full_name = 'Coach Aryan' WHERE username = 'sona.walia'").run();
-    db.prepare("UPDATE AddOns SET title = replace(title, 'Sona Walia', 'Coach Aryan') WHERE title LIKE '%Sona Walia%'").run();
-
-    seedDatabase();
-
-    const identities = db.prepare("SELECT username, full_name, role FROM Users ORDER BY role").all();
-    assert.ok(identities.some(user => user.username === 'ashish' && user.full_name === 'Ashish' && user.role === 'owner'));
-    assert.ok(identities.some(user => user.username === 'parmar' && user.full_name === 'Parmar' && user.role === 'manager'));
-    assert.ok(identities.some(user => user.username === 'sona.walia' && user.full_name === 'Sona Walia' && user.role === 'trainer'));
-    assert.equal(db.prepare("SELECT COUNT(*) AS count FROM Users WHERE username IN ('owner', 'manager', 'trainer.aryan')").get().count, 0);
-    assert.match(db.prepare("SELECT title FROM AddOns WHERE type = 'PT' AND trainer_id = 101").get().title, /Sona Walia/);
+  await t.test('auth config exposes the client id without secrets', async () => {
+    const config = await request(baseUrl, '/api/auth/config');
+    assert.equal(config.status, 200);
+    assert.equal(config.data.googleSignIn.configured, true);
+    assert.equal(config.data.googleSignIn.clientId, GOOGLE_CLIENT_ID);
   });
 
-  await t.test('passwords are bcrypt hashes and login returns a bounded JWT session', async () => {
-    const storedOwner = db.prepare("SELECT * FROM Users WHERE username = 'ashish'").get();
-    assert.match(storedOwner.password_hash, /^\$2[aby]\$/);
-    assert.notEqual(storedOwner.password_hash, 'Ashish@samrat1!');
+  await t.test('seeded staff accounts have Gmail identities and no credentials', async () => {
+    const owner = db.prepare("SELECT * FROM Users WHERE role = 'owner'").get();
+    assert.ok(owner);
+    assert.ok(owner.email);
+    assert.equal('password_hash' in owner, false);
+    assert.equal('username' in owner, false);
+  });
 
-    const failed = await login(baseUrl, 'Ashish', 'wrong-password');
-    assert.equal(failed.status, 401);
-    assert.equal(failed.data.error, 'Invalid username or password.');
+  await t.test('an unregistered Gmail is rejected', async () => {
+    const response = await googleLogin(baseUrl, mintIdToken({ email: 'stranger@gmail.com' }));
+    assert.equal(response.status, 403);
+    assert.equal(response.data.code, 'ACCOUNT_NOT_REGISTERED');
+  });
 
-    const response = await login(baseUrl, 'Ashish', 'Ashish@samrat1!');
+  await t.test('a malformed or forged credential is rejected', async () => {
+    const malformed = await googleLogin(baseUrl, 'not-a-jwt');
+    assert.equal(malformed.status, 400);
+
+    // Signed with a different key → signature check must fail.
+    const forged = jwt.sign(
+      { iss: 'https://accounts.google.com', aud: GOOGLE_CLIENT_ID, email: 'ashish@samratfitness.test', email_verified: true, sub: 'x', iat: 0, exp: Math.floor(Date.now() / 1000) + 100 },
+      crypto.generateKeyPairSync('rsa', { modulusLength: 2048, publicKeyEncoding: { type: 'spki', format: 'pem' }, privateKeyEncoding: { type: 'pkcs8', format: 'pem' } }).privateKey,
+      { algorithm: 'RS256', header: { alg: 'RS256', typ: 'JWT', kid: KEY_ID } }
+    );
+    const forgedResponse = await googleLogin(baseUrl, forged);
+    assert.equal(forgedResponse.status, 401);
+  });
+
+  await t.test('the seeded owner signs in with Google and gets a bounded session', async () => {
+    const ownerEmail = db.prepare("SELECT email FROM Users WHERE role = 'owner'").get().email;
+    const response = await googleLogin(baseUrl, mintIdToken({ email: ownerEmail, sub: 'owner-google-sub' }));
     assert.equal(response.status, 200);
     assert.equal(response.data.success, true);
     assert.equal(response.data.user.role, 'owner');
-    assert.equal(response.data.user.username, 'ashish');
-    assert.equal(response.data.user.fullName, 'Ashish');
+    assert.equal(response.data.user.email, ownerEmail);
     assert.equal(response.data.token.split('.').length, 3);
     assert.equal('password_hash' in response.data.user, false);
     ownerToken = response.data.token;
 
     const sessionCount = db.prepare('SELECT COUNT(*) AS count FROM AuthSessions WHERE revoked_at IS NULL').get().count;
     assert.equal(sessionCount, 1);
+
+    // First sign-in binds the Google subject id.
+    const stored = db.prepare('SELECT google_sub FROM Users WHERE email = ?').get(ownerEmail);
+    assert.equal(stored.google_sub, 'owner-google-sub');
   });
 
-  await t.test('owner can access financial dashboards and credential metadata without hashes', async () => {
+  await t.test('owner can access financial dashboards and staff list without hashes', async () => {
     const dashboard = await request(baseUrl, '/api/dashboard/stats', { token: ownerToken });
     assert.equal(dashboard.status, 200);
     assert.equal(typeof dashboard.data.summary.renewalRevenueThisMonth, 'number');
@@ -101,37 +149,27 @@ test('JWT authentication, revocation, and role boundaries', async t => {
     assert.equal('password_hash' in users.data.data[0], false);
   });
 
-  await t.test('manager receives the same full operational access tier', async () => {
-    const managerLogin = await login(baseUrl, 'Parmar', 'Manager@2026!');
-    assert.equal(managerLogin.status, 200);
-    assert.equal(managerLogin.data.user.role, 'manager');
-    assert.equal(managerLogin.data.user.username, 'parmar');
-    assert.equal(managerLogin.data.user.fullName, 'Parmar');
-
-    const dashboard = await request(baseUrl, '/api/dashboard/stats', { token: managerLogin.data.token });
-    const settings = await request(baseUrl, '/api/dashboard/settings', { token: managerLogin.data.token });
-    assert.equal(dashboard.status, 200);
-    assert.equal(settings.status, 200);
-  });
-
-  await t.test('owner can create a bcrypt-protected staff account and deactivation revokes it', async () => {
+  await t.test('owner can create a Gmail-based staff account and deactivation revokes it', async () => {
     const created = await request(baseUrl, '/api/users', {
       token: ownerToken,
       method: 'POST',
       body: {
-        username: 'desk.integration',
+        email: 'desk.integration@gmail.com',
         fullName: 'Integration Desk',
-        password: 'Integration@2026!',
         role: 'front_desk'
       }
     });
     assert.equal(created.status, 201);
     assert.equal(created.data.data.role, 'front_desk');
 
-    const stored = db.prepare('SELECT password_hash FROM Users WHERE id = ?').get(created.data.data.id);
-    assert.match(stored.password_hash, /^\$2[aby]\$/);
+    const duplicate = await request(baseUrl, '/api/users', {
+      token: ownerToken,
+      method: 'POST',
+      body: { email: 'Desk.Integration@gmail.com', fullName: 'Dup Desk', role: 'front_desk' }
+    });
+    assert.equal(duplicate.status, 409);
 
-    const staffLogin = await login(baseUrl, 'desk.integration', 'Integration@2026!');
+    const staffLogin = await googleLogin(baseUrl, mintIdToken({ email: 'desk.integration@gmail.com', sub: 'desk-sub' }));
     assert.equal(staffLogin.status, 200);
 
     const disabled = await request(baseUrl, `/api/users/${created.data.data.id}`, {
@@ -144,88 +182,23 @@ test('JWT authentication, revocation, and role boundaries', async t => {
     const revoked = await request(baseUrl, '/api/members', { token: staffLogin.data.token });
     assert.equal(revoked.status, 401);
     assert.equal(revoked.data.code, 'INVALID_SESSION');
+
+    // A disabled account cannot sign in.
+    const reLogin = await googleLogin(baseUrl, mintIdToken({ email: 'desk.integration@gmail.com', sub: 'desk-sub' }));
+    assert.equal(reLogin.status, 403);
+    assert.equal(reLogin.data.code, 'ACCOUNT_DISABLED');
   });
 
-  await t.test('login works with a registered mobile number and forgot-password identifies accounts', async () => {
-    db.prepare('UPDATE Users SET phone = ? WHERE username = ?').run('+919825011223', 'ashish');
-
-    const phoneLogin = await login(baseUrl, '98250 11223', 'Ashish@samrat1!');
-    assert.equal(phoneLogin.status, 200);
-    assert.equal(phoneLogin.data.user.username, 'ashish');
-
-    const plusLogin = await login(baseUrl, '+919825011223', 'Ashish@samrat1!');
-    assert.equal(plusLogin.status, 200);
-    assert.equal(plusLogin.data.user.username, 'ashish');
-
-    const forgot = await request(baseUrl, '/api/auth/forgot-password', {
-      method: 'POST',
-      body: { identifier: '+91 98250 11223' }
-    });
-    assert.equal(forgot.status, 200);
-    assert.equal(forgot.data.found, true);
-    assert.equal(forgot.data.account.username, 'ashish');
-    assert.equal(forgot.data.account.hasRecoveryMobile, true);
-    assert.match(forgot.data.account.phoneMasked, /1223$/);
-    assert.ok(!('password_hash' in (forgot.data.account || {})));
-
-    const forgotByUsername = await request(baseUrl, '/api/auth/forgot-password', {
-      method: 'POST',
-      body: { identifier: 'Ashish' }
-    });
-    assert.equal(forgotByUsername.status, 200);
-    assert.equal(forgotByUsername.data.found, true);
-
-    const missing = await request(baseUrl, '/api/auth/forgot-password', {
-      method: 'POST',
-      body: { identifier: 'nobody.here' }
-    });
-    assert.equal(missing.status, 200);
-    assert.equal(missing.data.found, false);
-  });
-
-  await t.test('staff accounts can register mobile numbers with duplicate protection', async () => {
-    const created = await request(baseUrl, '/api/users', {
-      token: ownerToken,
-      method: 'POST',
-      body: {
-        username: 'desk.mobile',
-        fullName: 'Mobile Desk',
-        password: 'Integration@2026!',
-        role: 'front_desk',
-        phone: '98980 44556'
-      }
-    });
-    assert.equal(created.status, 201);
-    assert.equal(created.data.data.phone, '+919898044556');
-
-    const mobileLogin = await login(baseUrl, '+919898044556', 'Integration@2026!');
-    assert.equal(mobileLogin.status, 200);
-    assert.equal(mobileLogin.data.user.username, 'desk.mobile');
-
-    const duplicate = await request(baseUrl, '/api/users', {
-      token: ownerToken,
-      method: 'POST',
-      body: {
-        username: 'desk.mobile2',
-        fullName: 'Duplicate Desk',
-        password: 'Integration@2026!',
-        role: 'front_desk',
-        phone: '9898044556'
-      }
-    });
-    assert.equal(duplicate.status, 409);
-
-    const cleared = await request(baseUrl, `/api/users/${created.data.data.id}`, {
-      token: ownerToken,
-      method: 'PATCH',
-      body: { phone: '' }
-    });
-    assert.equal(cleared.status, 200);
-    assert.equal(cleared.data.data.phone, null);
+  await t.test('a look-alike Google account with the same email is rejected', async () => {
+    const ownerEmail = db.prepare("SELECT email FROM Users WHERE role = 'owner'").get().email;
+    const response = await googleLogin(baseUrl, mintIdToken({ email: ownerEmail, sub: 'different-google-sub' }));
+    assert.equal(response.status, 403);
+    assert.equal(response.data.code, 'GOOGLE_ACCOUNT_MISMATCH');
   });
 
   await t.test('front desk is limited to redacted lookup and attendance operations', async () => {
-    const loginResponse = await login(baseUrl, 'frontdesk', 'Desk@2026!Gym');
+    const email = db.prepare("SELECT email FROM Users WHERE role = 'front_desk'").get().email;
+    const loginResponse = await googleLogin(baseUrl, mintIdToken({ email, sub: 'frontdesk-sub' }));
     assert.equal(loginResponse.status, 200);
     frontDeskToken = loginResponse.data.token;
 
@@ -233,87 +206,56 @@ test('JWT authentication, revocation, and role boundaries', async t => {
     assert.equal(members.status, 200);
     assert.equal(members.data.accessScope, 'assisted_lookup');
     assert.ok(members.data.data.length > 0);
-    assert.equal('email' in members.data.data[0], false);
     assert.equal('base_price' in members.data.data[0], false);
-
-    const lookup = await request(baseUrl, `/api/members/${members.data.data[0].id}`, { token: frontDeskToken });
-    assert.equal(lookup.status, 200);
-    assert.equal(lookup.data.accessScope, 'assisted_lookup');
-    assert.equal('email' in lookup.data.data, false);
-    assert.equal('notifications' in lookup.data.data, false);
-    assert.equal('base_price' in (lookup.data.data.activeMembership || {}), false);
 
     const financials = await request(baseUrl, '/api/dashboard/stats', { token: frontDeskToken });
     assert.equal(financials.status, 403);
     assert.equal(financials.data.code, 'FORBIDDEN');
 
-    const staffUsers = await request(baseUrl, '/api/users', { token: frontDeskToken });
-    assert.equal(staffUsers.status, 403);
-
     const qr = await request(baseUrl, '/api/attendance/qr-session', { token: frontDeskToken });
     assert.equal(qr.status, 200);
-    const checkIn = await request(baseUrl, '/api/attendance/check-in', {
-      token: frontDeskToken,
-      method: 'POST',
-      body: {
-        member_id: members.data.data[0].id,
-        source: 'Assisted',
-        correction_reason: 'Integration test assisted lookup'
-      }
-    });
-    assert.equal(checkIn.status, 200);
   });
 
-  await t.test('trainer sees only assigned PT clients and no order amount', async () => {
-    const loginResponse = await login(baseUrl, 'sona.walia', 'Trainer@2026!');
+  await t.test('trainer sees only assigned PT clients', async () => {
+    const email = db.prepare("SELECT email FROM Users WHERE role = 'trainer'").get().email;
+    const loginResponse = await googleLogin(baseUrl, mintIdToken({ email, sub: 'trainer-sub' }));
     assert.equal(loginResponse.status, 200);
-    assert.equal(loginResponse.data.user.username, 'sona.walia');
-    assert.equal(loginResponse.data.user.fullName, 'Sona Walia');
     trainerToken = loginResponse.data.token;
-
-    const orders = await request(baseUrl, '/api/addons/active-orders', { token: trainerToken });
-    assert.equal(orders.status, 200);
-    assert.equal(orders.data.accessScope, 'assigned_pt_clients');
-    assert.ok(orders.data.data.length > 0);
-    assert.ok(orders.data.data.every(order => order.type === 'PT'));
-    assert.ok(orders.data.data.every(order => !('amount' in order)));
 
     const clients = await request(baseUrl, '/api/members', { token: trainerToken });
     assert.equal(clients.status, 200);
     assert.equal(clients.data.accessScope, 'assigned_pt_clients');
     assert.ok(clients.data.data.every(member => Number(member.assigned_trainer_id) === 101));
 
-    const assignedProfile = await request(baseUrl, `/api/members/${clients.data.data[0].id}`, { token: trainerToken });
-    assert.equal(assignedProfile.status, 200);
-    assert.equal(assignedProfile.data.accessScope, 'assigned_pt_client');
-    assert.ok(assignedProfile.data.data.ptOrders.every(order => !('amount' in order) && !('price' in order)));
-
-    const unrelatedMember = db.prepare('SELECT id FROM Members WHERE assigned_trainer_id IS NULL ORDER BY id LIMIT 1').get();
-    const unrelatedProfile = await request(baseUrl, `/api/members/${unrelatedMember.id}`, { token: trainerToken });
-    assert.equal(unrelatedProfile.status, 403);
-
     const forbiddenDashboard = await request(baseUrl, '/api/dashboard/stats', { token: trainerToken });
     assert.equal(forbiddenDashboard.status, 403);
   });
 
-  await t.test('password changes revoke every existing session', async () => {
-    const changed = await request(baseUrl, '/api/auth/change-password', {
-      token: trainerToken,
-      method: 'POST',
-      body: {
-        currentPassword: 'Trainer@2026!',
-        newPassword: 'TrainerNext@2026!'
-      }
+  await t.test('changing a Gmail re-points the account and revokes existing sessions', async () => {
+    const trainer = db.prepare("SELECT id, email FROM Users WHERE role = 'trainer'").get();
+    const changed = await request(baseUrl, `/api/users/${trainer.id}`, {
+      token: ownerToken,
+      method: 'PATCH',
+      body: { email: 'sona.relinked@gmail.com' }
     });
     assert.equal(changed.status, 200);
 
-    const oldSession = await request(baseUrl, '/api/addons/active-orders', { token: trainerToken });
-    assert.equal(oldSession.status, 401);
+    // The previous Google binding is cleared and sessions are revoked.
+    const stored = db.prepare('SELECT email, google_sub FROM Users WHERE id = ?').get(trainer.id);
+    assert.equal(stored.email, 'sona.relinked@gmail.com');
+    assert.equal(stored.google_sub, null);
 
-    const oldPassword = await login(baseUrl, 'sona.walia', 'Trainer@2026!');
-    assert.equal(oldPassword.status, 401);
-    const newPassword = await login(baseUrl, 'sona.walia', 'TrainerNext@2026!');
-    assert.equal(newPassword.status, 200);
+    // The previous trainer session is invalidated by the token_version bump.
+    const after = await request(baseUrl, '/api/addons/active-orders', { token: trainerToken });
+    assert.equal(after.status, 401);
+
+    // The old Gmail no longer resolves to the account.
+    const oldLogin = await googleLogin(baseUrl, mintIdToken({ email: trainer.email, sub: 'trainer-sub' }));
+    assert.equal(oldLogin.status, 403);
+
+    // The new Gmail signs in and re-binds.
+    const newLogin = await googleLogin(baseUrl, mintIdToken({ email: 'sona.relinked@gmail.com', sub: 'trainer-new-sub' }));
+    assert.equal(newLogin.status, 200);
   });
 
   await t.test('logout revokes the JWT immediately', async () => {

@@ -15,22 +15,80 @@ db.pragma('foreign_keys = ON');
 db.pragma('journal_mode = WAL');
 db.pragma('busy_timeout = 5000');
 
+// Staff identity migration for databases created while the app still used
+// User ID + password sign-in. It is idempotent and runs on every boot:
+//   1. adds the `phone` column to very old schemas;
+//   2. rebuilds Users without the credential columns (username, password_hash,
+//      failed_login_attempts, locked_until, password_changed_at), preserving
+//      ids so attendance, follow-up and audit history keep resolving.
+// Every password-era session is revoked: those tokens were issued against a
+// credential that no longer exists.
+function migrateStaffIdentityColumns() {
+  const columns = db.prepare('PRAGMA table_info(Users)').all().map(col => col.name);
+  if (!columns.includes('phone')) {
+    db.exec('ALTER TABLE Users ADD COLUMN phone TEXT');
+  }
+
+  const droppedColumns = ['username', 'password_hash', 'failed_login_attempts', 'locked_until', 'password_changed_at']
+    .filter(name => columns.includes(name));
+  if (droppedColumns.length === 0) return;
+
+  const revokedAt = new Date().toISOString();
+  // PRAGMA foreign_keys is a no-op inside a transaction, so it is set outside.
+  db.pragma('foreign_keys = OFF');
+  const rebuild = db.transaction(() => {
+    db.exec(`
+      CREATE TABLE Users_google (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT COLLATE NOCASE UNIQUE,
+        google_sub TEXT UNIQUE,
+        full_name TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('owner', 'manager', 'front_desk', 'trainer')),
+        trainer_id INTEGER,
+        phone TEXT,
+        active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
+        token_version INTEGER NOT NULL DEFAULT 0,
+        last_login_at TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+
+      INSERT INTO Users_google (id, email, google_sub, full_name, role, trainer_id, phone, active, token_version, last_login_at, created_at, updated_at)
+      SELECT id, NULL, NULL, full_name, role, trainer_id, phone, active, token_version, last_login_at, created_at, updated_at
+      FROM Users;
+
+      DROP TABLE Users;
+      ALTER TABLE Users_google RENAME TO Users;
+    `);
+  });
+  rebuild();
+  db.pragma('foreign_keys = ON');
+
+  db.prepare('UPDATE AuthSessions SET revoked_at = COALESCE(revoked_at, ?) WHERE revoked_at IS NULL').run(revokedAt);
+  const migratedAccounts = db.prepare('SELECT COUNT(*) AS count FROM Users').get().count;
+  logAudit(null, 'System', 'Remove Password Credentials', 'Users', 0,
+    { removedColumns: droppedColumns },
+    { signIn: 'google', accountsAwaitingGmail: migratedAccounts });
+  console.warn(`Removed password sign-in (${droppedColumns.join(', ')}) from ${migratedAccounts} staff account(s). Link a Gmail with scripts/linkStaffGmail.js.`);
+}
+
 function initDatabase() {
   db.exec(`
-    -- Staff identities. Passwords are stored only as adaptive bcrypt hashes.
+    -- Staff identities. Sign-in is delegated to Google ("Sign in with Google"),
+    -- so this table holds no credentials at all — only the registered Google
+    -- account (email) and the immutable Google subject ID bound on first use.
+    -- email stays nullable so accounts created before the Google-only switch
+    -- survive the migration; they cannot sign in until an admin links a Gmail.
     CREATE TABLE IF NOT EXISTS Users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT NOT NULL COLLATE NOCASE UNIQUE,
-      password_hash TEXT NOT NULL,
+      email TEXT COLLATE NOCASE UNIQUE,
+      google_sub TEXT UNIQUE,
       full_name TEXT NOT NULL,
       role TEXT NOT NULL CHECK(role IN ('owner', 'manager', 'front_desk', 'trainer')),
       trainer_id INTEGER,
       phone TEXT,
       active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0, 1)),
-      failed_login_attempts INTEGER NOT NULL DEFAULT 0,
-      locked_until TEXT,
       token_version INTEGER NOT NULL DEFAULT 0,
-      password_changed_at TEXT DEFAULT (datetime('now')),
       last_login_at TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
@@ -249,12 +307,8 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_addon_orders_trainer ON AddOnOrders(trainer_product_id);
   `);
 
-  // Idempotent migration for databases created before staff accounts
-  // could store a mobile number (used for login + recovery identification).
-  const userColumns = db.prepare('PRAGMA table_info(Users)').all().map(col => col.name);
-  if (!userColumns.includes('phone')) {
-    db.exec('ALTER TABLE Users ADD COLUMN phone TEXT');
-  }
+  // Idempotent migrations for databases created before the Google-only sign-in.
+  migrateStaffIdentityColumns();
   // Runs after the migration so pre-existing databases can build the index too.
   db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON Users(phone) WHERE phone IS NOT NULL');
 

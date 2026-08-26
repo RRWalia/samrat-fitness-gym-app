@@ -7,7 +7,6 @@ const dbFile = path.join(__dirname, `.csv-import-test-${process.pid}.db`);
 process.env.NODE_ENV = 'test';
 process.env.DB_PATH = dbFile;
 process.env.JWT_SECRET = 'csv-import-test-secret-with-more-than-thirty-two-characters';
-process.env.BCRYPT_ROUNDS = '4';
 
 const { initDatabase } = require('../src/config/database');
 const { seedDatabase } = require('../src/config/seed');
