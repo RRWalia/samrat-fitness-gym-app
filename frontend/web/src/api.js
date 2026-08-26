@@ -50,8 +50,12 @@ async function apiRequest(path, options = {}) {
   }
 
   const headers = new Headers(fetchOptions.headers || {});
-  // A string body (e.g. CSV text) keeps whatever Content-Type the caller set.
-  if (fetchOptions.body && !headers.has('Content-Type') && typeof fetchOptions.body !== 'string') {
+  // Every caller in this module sends JSON (even the CSV import wraps the text
+  // in JSON). Default the header accordingly: without it, fetch labels string
+  // bodies "text/plain", express.json() skips parsing, and the API sees an
+  // empty body (the cause of the "empty sign-in request" login failure).
+  // A caller needing a different type must set Content-Type explicitly.
+  if (fetchOptions.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
   if (auth && session?.token) headers.set('Authorization', `Bearer ${session.token}`);
