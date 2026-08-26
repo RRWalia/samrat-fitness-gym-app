@@ -60,8 +60,10 @@ function request(baseUrl, route, { token, method = 'GET', body } = {}) {
   }).then(async response => ({ status: response.status, data: await response.json() }));
 }
 
-function googleLogin(baseUrl, credential, rememberMe = false) {
-  return request(baseUrl, '/api/auth/google', { method: 'POST', body: { credential, rememberMe } });
+function googleLogin(baseUrl, credential, rememberMe = false, selectedRole = null) {
+  const body = { credential, rememberMe };
+  if (selectedRole !== null && selectedRole !== undefined) body.selectedRole = selectedRole;
+  return request(baseUrl, '/api/auth/google', { method: 'POST', body });
 }
 
 test('Google sign-in, session lifecycle, and role boundaries', async t => {
@@ -229,6 +231,64 @@ test('Google sign-in, session lifecycle, and role boundaries', async t => {
 
     const forbiddenDashboard = await request(baseUrl, '/api/dashboard/stats', { token: trainerToken });
     assert.equal(forbiddenDashboard.status, 403);
+  });
+
+  await t.test('role selection guard rejects mismatched role and allows matching role', async () => {
+    const ownerEmail = db.prepare("SELECT email FROM Users WHERE role = 'owner'").get().email;
+    const frontDeskEmail = db.prepare("SELECT email FROM Users WHERE role = 'front_desk'").get().email;
+
+    const sessionsBefore = db.prepare('SELECT COUNT(*) AS count FROM AuthSessions WHERE revoked_at IS NULL').get().count;
+
+    // Front desk staff picking Owner / Manager is rejected
+    const wrongRoleResponse = await googleLogin(
+      baseUrl,
+      mintIdToken({ email: frontDeskEmail, sub: 'frontdesk-sub' }),
+      false,
+      'owner_manager'
+    );
+    assert.equal(wrongRoleResponse.status, 403);
+    assert.equal(wrongRoleResponse.data.code, 'ROLE_MISMATCH');
+    assert.equal(
+      wrongRoleResponse.data.error,
+      'This account is registered as Front Desk, not Owner / Manager. Pick the correct role and try again.'
+    );
+
+    // No session was created for the rejected login attempt
+    const sessionsAfterReject = db.prepare('SELECT COUNT(*) AS count FROM AuthSessions WHERE revoked_at IS NULL').get().count;
+    assert.equal(sessionsAfterReject, sessionsBefore);
+
+    // Owner picking Trainer is rejected
+    const ownerWrongRole = await googleLogin(
+      baseUrl,
+      mintIdToken({ email: ownerEmail, sub: 'owner-google-sub' }),
+      false,
+      'trainer'
+    );
+    assert.equal(ownerWrongRole.status, 403);
+    assert.equal(ownerWrongRole.data.code, 'ROLE_MISMATCH');
+    assert.equal(
+      ownerWrongRole.data.error,
+      'This account is registered as Owner / Manager, not Trainer. Pick the correct role and try again.'
+    );
+
+    // Front desk picking Front Desk succeeds
+    const correctRoleResponse = await googleLogin(
+      baseUrl,
+      mintIdToken({ email: frontDeskEmail, sub: 'frontdesk-sub' }),
+      false,
+      'front_desk'
+    );
+    assert.equal(correctRoleResponse.status, 200);
+    assert.equal(correctRoleResponse.data.success, true);
+    assert.equal(correctRoleResponse.data.user.role, 'front_desk');
+
+    // Missing or unknown role selection still succeeds for backward compatibility
+    const missingRoleResponse = await googleLogin(
+      baseUrl,
+      mintIdToken({ email: ownerEmail, sub: 'owner-google-sub' })
+    );
+    assert.equal(missingRoleResponse.status, 200);
+    assert.equal(missingRoleResponse.data.success, true);
   });
 
   await t.test('changing a Gmail re-points the account and revokes existing sessions', async () => {

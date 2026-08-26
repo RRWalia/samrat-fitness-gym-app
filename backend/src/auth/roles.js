@@ -31,6 +31,30 @@ const ROLE_DETAILS = Object.freeze({
   }
 });
 
+const ROLE_SELECTIONS = Object.freeze({
+  OWNER_MANAGER: 'owner_manager',
+  FRONT_DESK: 'front_desk',
+  TRAINER: 'trainer'
+});
+
+const ROLE_SELECTION_OPTIONS = Object.freeze([
+  {
+    id: ROLE_SELECTIONS.OWNER_MANAGER,
+    label: 'Owner / Manager',
+    roles: [ROLES.OWNER, ROLES.MANAGER]
+  },
+  {
+    id: ROLE_SELECTIONS.FRONT_DESK,
+    label: 'Front Desk',
+    roles: [ROLES.FRONT_DESK]
+  },
+  {
+    id: ROLE_SELECTIONS.TRAINER,
+    label: 'Trainer',
+    roles: [ROLES.TRAINER]
+  }
+]);
+
 function isFullAccessRole(role) {
   return FULL_ACCESS_ROLES.includes(role);
 }
@@ -43,12 +67,49 @@ function actorTypeForRole(role) {
   return role === ROLES.OWNER ? 'Owner' : 'Staff';
 }
 
+function getRoleOption(selectionId) {
+  return ROLE_SELECTION_OPTIONS.find(opt => opt.id === selectionId) || null;
+}
+
+function getRoleOptionForUserRole(role) {
+  return ROLE_SELECTION_OPTIONS.find(opt => opt.roles.includes(role)) || null;
+}
+
+function validateRoleSelection(userRole, selectedRole) {
+  if (!selectedRole || typeof selectedRole !== 'string') {
+    return { valid: true };
+  }
+  const trimmed = selectedRole.trim();
+  if (!trimmed) {
+    return { valid: true };
+  }
+  const selectedOption = getRoleOption(trimmed);
+  // Missing or unrecognized role selection is accepted for backward compatibility
+  if (!selectedOption) {
+    return { valid: true };
+  }
+  if (selectedOption.roles.includes(userRole)) {
+    return { valid: true };
+  }
+  const actualOption = getRoleOptionForUserRole(userRole);
+  const actualLabel = actualOption?.label || roleDetails(userRole).label || 'Staff';
+  return {
+    valid: false,
+    error: `This account is registered as ${actualLabel}, not ${selectedOption.label}. Pick the correct role and try again.`
+  };
+}
+
 module.exports = {
   ROLES,
   ALL_ROLES,
   FULL_ACCESS_ROLES,
   ROLE_DETAILS,
+  ROLE_SELECTIONS,
+  ROLE_SELECTION_OPTIONS,
   isFullAccessRole,
   roleDetails,
-  actorTypeForRole
+  actorTypeForRole,
+  getRoleOption,
+  getRoleOptionForUserRole,
+  validateRoleSelection
 };
