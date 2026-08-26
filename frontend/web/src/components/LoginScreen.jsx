@@ -67,6 +67,8 @@ export default function LoginScreen({ onLogin, notice }) {
   const [error, setError] = useState('');
   const buttonRef = useRef(null);
 
+  const isPreview = typeof window !== 'undefined' && window.location.hostname.endsWith('.e2b.app');
+
   const rememberRef = useRef(rememberMe);
   useEffect(() => { rememberRef.current = rememberMe; }, [rememberMe]);
 
@@ -116,6 +118,20 @@ export default function LoginScreen({ onLogin, notice }) {
         client_id: config.clientId,
         callback: async (response) => {
           if (cancelled) return;
+
+          if (!response.credential) {
+            let msg = 'Google sign-in did not complete. Please try again.';
+            if (response.error === 'popup_closed_by_user') {
+              msg = 'You closed the Google sign-in window before it finished. Please try again.';
+            } else if (response.error === 'popup_blocked_by_browser') {
+              msg = 'Your browser blocked the Google sign-in popup. Please allow popups for this site and try again.';
+            } else if (response.error === 'origin_mismatch') {
+              msg = 'Google does not recognize this page address. Sign-in is only allowed from the registered domain.';
+            }
+            setError(msg);
+            return;
+          }
+
           setLoading(true);
           setError('');
           try {
@@ -268,6 +284,11 @@ export default function LoginScreen({ onLogin, notice }) {
               <p className="mt-1.5 text-sm text-slate-400">Sign in with your registered Gmail.</p>
             </div>
 
+            {isPreview && (
+              <div className="mb-5 rounded-xl border border-sky-400/20 bg-sky-400/10 px-3.5 py-3 text-xs leading-5 text-sky-200" role="status">
+                You are viewing a preview environment. Google sign-in only works from the registered deployed address.
+              </div>
+            )}
             {notice && (
               <div className="mb-5 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3.5 py-3 text-xs leading-5 text-amber-200" role="status">
                 {notice}
