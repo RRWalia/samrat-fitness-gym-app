@@ -56,3 +56,179 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Light/dark theme pass
+   The app was originally built with dark Tailwind utilities.  These scoped
+   overrides keep existing component markup intact while remapping the shared
+   slate palette when the user selects Light mode. */
+:root {
+  color-scheme: dark;
+}
+
+html.theme-light {
+  color-scheme: light;
+}
+
+html.theme-light body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html.theme-light .bg-\[\#070b12\] {
+  background-color: #f8fafc;
+}
+
+html.theme-light .bg-slate-950,
+html.theme-light .bg-slate-950\/50,
+html.theme-light .bg-slate-950\/60,
+html.theme-light .bg-slate-950\/70,
+html.theme-light .bg-slate-950\/80,
+html.theme-light .bg-slate-950\/40 {
+  background-color: #f8fafc;
+}
+
+html.theme-light .bg-slate-950\/85 {
+  background-color: rgba(15, 23, 42, 0.42);
+}
+
+html.theme-light .bg-slate-900,
+html.theme-light .bg-slate-900\/40,
+html.theme-light .bg-slate-900\/50,
+html.theme-light .bg-slate-900\/60,
+html.theme-light .bg-slate-900\/75,
+html.theme-light .bg-slate-900\/80,
+html.theme-light .bg-slate-900\/90,
+html.theme-light .bg-slate-900\/95 {
+  background-color: rgba(255, 255, 255, 0.92);
+}
+
+html.theme-light .bg-slate-800,
+html.theme-light .bg-slate-800\/30,
+html.theme-light .bg-slate-800\/40,
+html.theme-light .bg-slate-800\/50,
+html.theme-light .bg-slate-800\/60,
+html.theme-light .bg-slate-800\/70,
+html.theme-light .bg-slate-800\/90 {
+  background-color: rgba(241, 245, 249, 0.9);
+}
+
+html.theme-light .bg-slate-700,
+html.theme-light .bg-slate-700\/40,
+html.theme-light .bg-slate-700\/50,
+html.theme-light .bg-slate-700\/80 {
+  background-color: rgba(226, 232, 240, 0.95);
+}
+
+html.theme-light .from-slate-900,
+html.theme-light .via-slate-800,
+html.theme-light .to-slate-900,
+html.theme-light .from-slate-800,
+html.theme-light .to-slate-800 {
+  --tw-gradient-from: #ffffff var(--tw-gradient-from-position);
+  --tw-gradient-via: #f1f5f9 var(--tw-gradient-via-position);
+  --tw-gradient-to: #e2e8f0 var(--tw-gradient-to-position);
+}
+
+html.theme-light .border-slate-900,
+html.theme-light .border-slate-800,
+html.theme-light .border-slate-800\/60,
+html.theme-light .border-slate-800\/80,
+html.theme-light .border-slate-700,
+html.theme-light .border-slate-700\/50,
+html.theme-light .border-slate-700\/60,
+html.theme-light .border-slate-700\/70,
+html.theme-light .border-slate-700\/80,
+html.theme-light .border-slate-600,
+html.theme-light .border-slate-600\/50,
+html.theme-light .border-slate-500 {
+  border-color: #cbd5e1;
+}
+
+html.theme-light .divide-slate-800 > :not(:last-child),
+html.theme-light .divide-slate-800\/60 > :not(:last-child) {
+  border-color: #e2e8f0;
+}
+
+html.theme-light .text-white,
+html.theme-light .text-slate-100,
+html.theme-light .text-slate-200,
+html.theme-light .text-slate-300 {
+  color: #0f172a;
+}
+
+html.theme-light .text-slate-400 {
+  color: #475569;
+}
+
+html.theme-light .text-slate-500,
+html.theme-light .text-slate-600,
+html.theme-light .text-slate-700 {
+  color: #64748b;
+}
+
+html.theme-light .text-slate-950 {
+  color: #0f172a;
+}
+
+html.theme-light .placeholder\:text-slate-600::placeholder,
+html.theme-light .placeholder-slate-600::placeholder {
+  color: #94a3b8;
+}
+
+html.theme-light .hover\:bg-slate-900:hover,
+html.theme-light .hover\:bg-slate-800:hover,
+html.theme-light .hover\:bg-slate-800\/30:hover,
+html.theme-light .hover\:bg-slate-800\/40:hover,
+html.theme-light .hover\:bg-slate-800\/60:hover,
+html.theme-light .hover\:bg-slate-700:hover {
+  background-color: #e2e8f0;
+}
+
+html.theme-light .hover\:border-slate-700:hover,
+html.theme-light .hover\:border-slate-600:hover,
+html.theme-light .hover\:border-slate-500:hover {
+  border-color: #94a3b8;
+}
+
+html.theme-light .hover\:text-white:hover,
+html.theme-light .hover\:text-slate-200:hover,
+html.theme-light .hover\:text-slate-300:hover {
+  color: #020617;
+}
+
+html.theme-light .bg-purple-600.text-white,
+html.theme-light .bg-emerald-600.text-white,
+html.theme-light .bg-emerald-700\/70.text-white,
+html.theme-light .bg-red-500.text-white {
+  color: #ffffff;
+}
+
+html.theme-light input,
+html.theme-light select,
+html.theme-light textarea {
+  color: #0f172a;
+}
+
+html.theme-light .shadow-2xl,
+html.theme-light .shadow-xl,
+html.theme-light .shadow-lg {
+  --tw-shadow-color: rgba(15, 23, 42, 0.12);
+}
+
+html.theme-light ::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+
+html.theme-light ::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+}
+
+html.theme-light ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+html.theme-light .login-grid {
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.055) 1px, transparent 1px);
+}

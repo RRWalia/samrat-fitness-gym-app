@@ -5,9 +5,11 @@ import {
   Crown,
   Dumbbell,
   LogOut,
+  Moon,
   RefreshCw,
   ShieldCheck,
-  Smartphone
+  Smartphone,
+  Sun
 } from 'lucide-react';
 import UpdatePhoneModal from './UpdatePhoneModal';
 
@@ -25,7 +27,9 @@ export default function Header({
   user,
   expiresAt,
   onLogout,
-  onRefreshAll
+  onRefreshAll,
+  theme,
+  onToggleTheme
 }) {
   const [time, setTime] = useState(new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }));
   const [showPhoneModal, setShowPhoneModal] = useState(false);
@@ -76,6 +80,15 @@ export default function Header({
               <span className="text-slate-600">·</span>
               <span className="text-slate-500">Session until {sessionExpiry}</span>
             </div>
+
+            <button
+              onClick={onToggleTheme}
+              className="rounded-xl border border-slate-700 bg-slate-800 p-2.5 text-slate-400 transition hover:bg-slate-700 hover:text-white"
+              title={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+              aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+            >
+              {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+            </button>
 
             <button
               onClick={onRefreshAll}

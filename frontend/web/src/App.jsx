@@ -16,6 +16,22 @@ import {
 } from './api';
 
 const fullAccessRoles = new Set(['owner', 'manager']);
+const THEME_STORAGE_KEY = 'samrat-ui-theme';
+
+function getInitialTheme() {
+  if (typeof window === 'undefined') return 'dark';
+  const storedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+  if (storedTheme === 'light' || storedTheme === 'dark') return storedTheme;
+  return window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+function applyTheme(theme) {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  root.classList.toggle('theme-light', theme === 'light');
+  root.classList.toggle('theme-dark', theme === 'dark');
+  root.style.colorScheme = theme;
+}
 
 function defaultViewForRole(role) {
   if (role === 'front_desk') return 'frontdesk';
@@ -48,8 +64,14 @@ export default function App() {
   const [activeRole, setActiveRole] = useState(() => defaultViewForRole(getStoredSession()?.user?.role));
   const [selectedMemberId, setSelectedMemberId] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [theme, setTheme] = useState(() => getInitialTheme());
 
   const allowedViews = useMemo(() => viewsForRole(session?.user?.role), [session?.user?.role]);
+
+  useEffect(() => {
+    applyTheme(theme);
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,7 +173,16 @@ export default function App() {
   };
 
   if (authLoading) return <LoadingScreen />;
-  if (!session) return <LoginScreen onLogin={handleLogin} notice={loginNotice} />;
+  if (!session) {
+    return (
+      <LoginScreen
+        onLogin={handleLogin}
+        notice={loginNotice}
+        theme={theme}
+        onToggleTheme={() => setTheme(value => (value === 'light' ? 'dark' : 'light'))}
+      />
+    );
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-950 text-slate-100 selection:bg-amber-500 selection:text-slate-950">
@@ -163,6 +194,8 @@ export default function App() {
         expiresAt={session.expiresAt}
         onLogout={handleLogout}
         onRefreshAll={() => setRefreshKey(value => value + 1)}
+        theme={theme}
+        onToggleTheme={() => setTheme(value => (value === 'light' ? 'dark' : 'light'))}
       />
 
       <main className="mx-auto w-full max-w-7xl flex-1 space-y-6 px-4 py-6 sm:px-6 lg:px-8">
