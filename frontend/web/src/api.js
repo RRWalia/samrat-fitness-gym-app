@@ -221,6 +221,17 @@ export async function fetchAttendanceHistory(params = {}) {
   return apiRequest(`/attendance/history${query ? `?${query}` : ''}`);
 }
 
+// Public, unauthenticated member QR check-in. The landing page at
+// /member-checkin calls this with the scanned token and the member's phone.
+export async function memberCheckIn({ token, phone }) {
+  return apiRequest('/public/member-checkin', {
+    method: 'POST',
+    auth: false,
+    suppressAuthEvent: true,
+    body: JSON.stringify({ token, phone })
+  });
+}
+
 export async function fetchRedList(params = {}) {
   const query = new URLSearchParams(Object.entries(params).filter(([, value]) => value !== undefined && value !== '')).toString();
   return apiRequest(`/red-list${query ? `?${query}` : ''}`);

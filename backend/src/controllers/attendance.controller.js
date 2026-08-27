@@ -1,5 +1,6 @@
-const { db, logAudit } = require('../config/database');
+const { db } = require('../config/database');
 const { ROLES, actorTypeForRole } = require('../auth/roles');
+const { recordAttendance } = require('../services/checkin.service');
 const crypto = require('crypto');
 
 function qrTokenForWindow(windowNumber) {
@@ -110,83 +111,24 @@ class AttendanceController {
         }
       }
 
-      // Insert Attendance Record
-      const attRes = db.prepare(`
-        INSERT INTO Attendance (member_id, check_in_time, source, qr_session, correction_reason, staff_actor_id)
-        VALUES (?, datetime('now', 'localtime'), ?, ?, ?, ?)
-      `).run(member.id, source, qr_session || 'ASSISTED', correction_reason || null, req.user.id);
-
-      // Streak engine
-      let streak = db.prepare('SELECT * FROM Streaks WHERE member_id = ?').get(member.id);
-      if (!streak) {
-        db.prepare(`INSERT INTO Streaks (member_id, rule_type, target, current_value, best_value, last_update) VALUES (?, ?, 4, 1, 1, date('now', 'localtime'))`).run(member.id, settings.streak_rule || 'Weekly');
-        streak = db.prepare('SELECT * FROM Streaks WHERE member_id = ?').get(member.id);
-      } else {
-        const newCurrent = streak.current_value + 1;
-        const newBest = Math.max(streak.best_value, newCurrent);
-        db.prepare(`
-          UPDATE Streaks 
-          SET current_value = ?, best_value = ?, last_update = date('now', 'localtime')
-          WHERE member_id = ?
-        `).run(newCurrent, newBest, member.id);
-        streak.current_value = newCurrent;
-        streak.best_value = newBest;
-      }
-
-      // OPERATING LOOP KEY LINK: Resolve open No-Show cases automatically upon check-in!
-      const openCase = db.prepare(`
-        SELECT id FROM NoShowCases 
-        WHERE member_id = ? AND status IN ('Open', 'Contacted', 'Follow-up due')
-        ORDER BY id DESC LIMIT 1
-      `).get(member.id);
-
-      let caseResolved = false;
-      if (openCase) {
-        db.prepare(`
-          UPDATE NoShowCases 
-          SET status = 'Returned', updated_at = datetime('now', 'localtime')
-          WHERE id = ?
-        `).run(openCase.id);
-
-        db.prepare(`
-          INSERT INTO FollowUps (case_id, channel, outcome, notes, staff_id, timestamp)
-          VALUES (?, 'Call', 'Will return', 'Member returned and checked in successfully at gym gate!', ?, datetime('now', 'localtime'))
-        `).run(openCase.id, req.user.id);
-
-        caseResolved = true;
-      }
-
-      // Reset member risk_state to Normal
-      db.prepare(`
-        UPDATE Members 
-        SET risk_state = 'Normal', updated_at = datetime('now', 'localtime')
-        WHERE id = ?
-      `).run(member.id);
-
-      logAudit(req.user.id, actorTypeForRole(req.user.role), 'Gym Check-in', 'Attendance', attRes.lastInsertRowid, null, {
-        memberName: member.name,
+      const result = recordAttendance({
+        member,
         source,
-        streak: streak.current_value,
-        noShowCaseResolved: caseResolved
+        qrSession: qr_session,
+        correctionReason: correction_reason,
+        actorId: req.user.id,
+        actorType: actorTypeForRole(req.user.role),
+        staffActorId: req.user.id
       });
 
       return res.json({
         success: true,
         message: `Welcome to Samrat Fitness King, ${member.name}! 🎉`,
-        attendanceId: attRes.lastInsertRowid,
-        checkInTime: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
-        member: {
-          id: member.id,
-          name: member.name,
-          phone: member.phone,
-          status: member.status
-        },
-        streak: {
-          current: streak.current_value,
-          best: streak.best_value,
-          target: streak.target
-        },
-        noShowCaseResolved: caseResolved
+        attendanceId: result.attendanceId,
+        checkInTime: result.checkInTime,
+        member: result.member,
+        streak: result.streak,
+        noShowCaseResolved: result.noShowCaseResolved
       });
     } catch (err) {
       return res.status(500).json({ error: err.message });
@@ -228,3 +170,6 @@ class AttendanceController {
 }
 
 module.exports = AttendanceController;
+// Exposed for the public member check-in endpoint and tests.
+module.exports.qrTokenForWindow = qrTokenForWindow;
+module.exports.isCurrentQrToken = isCurrentQrToken;

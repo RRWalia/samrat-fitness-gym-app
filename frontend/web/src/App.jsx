@@ -6,6 +6,7 @@ import OwnerDashboard from './components/OwnerDashboard';
 import MemberAppSimulator from './components/MemberAppSimulator';
 import FrontDeskKiosk from './components/FrontDeskKiosk';
 import TrainerView from './components/TrainerView';
+import MemberCheckIn from './components/MemberCheckIn';
 import {
   clearStoredSession,
   fetchCurrentUser,
@@ -65,6 +66,15 @@ export default function App() {
   const [selectedMemberId, setSelectedMemberId] = useState(1);
   const [refreshKey, setRefreshKey] = useState(0);
   const [theme, setTheme] = useState(() => getInitialTheme());
+
+  // Member-facing QR scan landing page. Reached by scanning the front-desk kiosk
+  // QR (/member-checkin?token=SFK_xxxxx). It is intentionally rendered outside
+  // the staff auth flow so any phone camera can open it without signing in.
+  const isMemberCheckIn =
+    typeof window !== 'undefined' && window.location.pathname.replace(/\/+$/, '') === '/member-checkin';
+  if (isMemberCheckIn) {
+    return <MemberCheckIn />;
+  }
 
   const allowedViews = useMemo(() => viewsForRole(session?.user?.role), [session?.user?.role]);
 
