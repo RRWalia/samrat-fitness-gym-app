@@ -4,7 +4,9 @@ import {
   Check,
   Crown,
   Dumbbell,
+  Moon,
   ShieldCheck,
+  Sun,
   TriangleAlert
 } from 'lucide-react';
 import { fetchAuthConfig } from '../api';
@@ -59,7 +61,7 @@ function readRolePref() {
   return 'owner_manager';
 }
 
-export default function LoginScreen({ onLogin, notice }) {
+export default function LoginScreen({ onLogin, notice, theme, onToggleTheme }) {
   const [config, setConfig] = useState(null);
   const [rememberMe, setRememberMe] = useState(readRememberMePref);
   const [selectedRole, setSelectedRole] = useState(readRolePref);
@@ -184,6 +186,16 @@ export default function LoginScreen({ onLogin, notice }) {
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#070b12] text-slate-100 selection:bg-amber-400 selection:text-slate-950">
+      <button
+        onClick={onToggleTheme}
+        className="absolute right-5 top-5 z-20 inline-flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900/75 px-3 py-2 text-xs font-semibold text-slate-300 shadow-lg backdrop-blur-xl transition hover:bg-slate-800 hover:text-white"
+        title={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+        aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} theme`}
+      >
+        {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+        <span className="hidden sm:inline">{theme === 'light' ? 'Dark' : 'Light'} mode</span>
+      </button>
+
       <div className="pointer-events-none absolute inset-0">
         <div className="absolute -left-40 top-[-12rem] h-[34rem] w-[34rem] rounded-full bg-amber-500/10 blur-3xl" />
         <div className="absolute -right-52 bottom-[-15rem] h-[38rem] w-[38rem] rounded-full bg-sky-500/10 blur-3xl" />
