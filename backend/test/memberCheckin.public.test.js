@@ -10,10 +10,10 @@ process.env.JWT_SECRET = 'integration-test-secret-with-more-than-thirty-two-char
 
 const { app } = require('../server');
 const { db } = require('../src/config/database');
-const { qrTokenForWindow } = require('../src/controllers/attendance.controller');
+const { qrTokenForWindow, QR_WINDOW_MS } = require('../src/controllers/attendance.controller');
 
 function currentToken() {
-  return qrTokenForWindow(Math.floor(Date.now() / 15000));
+  return qrTokenForWindow(Math.floor(Date.now() / QR_WINDOW_MS));
 }
 
 function post(baseUrl, route, body) {

@@ -12,7 +12,10 @@ import { fetchQrSession, performCheckIn, fetchMembers, fetchAttendanceHistory } 
 
 export default function FrontDeskKiosk({ currentUser }) {
   const [qrToken, setQrToken] = useState('SFK_INIT');
-  const [timeLeft, setTimeLeft] = useState(15);
+  // Matches backend QR_WINDOW_MS (attendance.controller.js) so the on-screen
+  // countdown/progress bar reflect the real token validity window.
+  const QR_WINDOW_SECONDS = 120;
+  const [timeLeft, setTimeLeft] = useState(QR_WINDOW_SECONDS);
   const [members, setMembers] = useState([]);
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [reason, setReason] = useState('Forgot smartphone at home');
@@ -153,7 +156,7 @@ export default function FrontDeskKiosk({ currentUser }) {
             </span>
             <h3 className="text-lg font-bold text-white mt-2">Scan to Check-In</h3>
             <p className="text-xs text-slate-400 max-w-xs mx-auto">
-              Members point their phone camera at this code and check in on the page it opens. Token rotates every 15s to prevent screenshot sharing.
+              Members point their phone camera at this code and check in on the page it opens. Token refreshes every 2 minutes to limit screenshot sharing while leaving enough time to scan and type a mobile number.
             </p>
           </div>
 
@@ -190,7 +193,7 @@ export default function FrontDeskKiosk({ currentUser }) {
             <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
               <div 
                 className="bg-amber-400 h-full transition-all duration-1000"
-                style={{ width: `${(timeLeft / 15) * 100}%` }}
+                style={{ width: `${(timeLeft / QR_WINDOW_SECONDS) * 100}%` }}
               ></div>
             </div>
           </div>
