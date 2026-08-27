@@ -3,6 +3,19 @@ const { ROLES, actorTypeForRole } = require('../auth/roles');
 const { recordAttendance } = require('../services/checkin.service');
 const crypto = require('crypto');
 
+// The kiosk QR rotates every QR_WINDOW_MS, and a scan is accepted for the
+// current window plus the one before it (so effective validity is
+// ~2 * QR_WINDOW_MS). This needs to be long enough for a real member to
+// unlock their phone, open the camera, scan, wait for the page to load, and
+// type their registered mobile number by hand — a flow that routinely takes
+// 30-60+ seconds. A short window (previously 15s, ~30s effective) meant the
+// token had almost always expired by the time the member submitted, so every
+// scan was rejected with "invalid or expired" even though the QR was in fact
+// the one currently on screen. 2 minutes (~4 min effective) comfortably
+// covers the manual-entry flow while still limiting how long a screenshot of
+// the kiosk QR stays usable.
+const QR_WINDOW_MS = 120000;
+
 function qrTokenForWindow(windowNumber) {
   const raw = `SAMRAT_GYM_${windowNumber}`;
   return `SFK_${crypto.createHash('sha256').update(raw).digest('hex').substring(0, 16)}`;
@@ -10,7 +23,7 @@ function qrTokenForWindow(windowNumber) {
 
 function isCurrentQrToken(token) {
   if (typeof token !== 'string') return false;
-  const currentWindow = Math.floor(Date.now() / 15000);
+  const currentWindow = Math.floor(Date.now() / QR_WINDOW_MS);
   // Permit the immediately previous rotation to account for a scan at the boundary.
   return token === qrTokenForWindow(currentWindow) || token === qrTokenForWindow(currentWindow - 1);
 }
@@ -22,12 +35,12 @@ class AttendanceController {
   static getQrSession(req, res) {
     try {
       const timestamp = Date.now();
-      const token = qrTokenForWindow(Math.floor(timestamp / 15000));
+      const token = qrTokenForWindow(Math.floor(timestamp / QR_WINDOW_MS));
 
       return res.json({
         success: true,
         qrToken: token,
-        expiresInSeconds: 15 - Math.floor((timestamp % 15000) / 1000),
+        expiresInSeconds: Math.floor(QR_WINDOW_MS / 1000) - Math.floor((timestamp % QR_WINDOW_MS) / 1000),
         gymName: 'Samrat Fitness King'
       });
     } catch (err) {
@@ -173,3 +186,4 @@ module.exports = AttendanceController;
 // Exposed for the public member check-in endpoint and tests.
 module.exports.qrTokenForWindow = qrTokenForWindow;
 module.exports.isCurrentQrToken = isCurrentQrToken;
+module.exports.QR_WINDOW_MS = QR_WINDOW_MS;
