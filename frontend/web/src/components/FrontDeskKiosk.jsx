@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Building2,
-  QrCode,
   UserCheck,
   CheckCircle2,
   AlertCircle,
   ShieldCheck
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import confetti from 'canvas-confetti';
 import { fetchQrSession, performCheckIn, fetchMembers, fetchAttendanceHistory } from '../api';
 
@@ -21,6 +21,13 @@ export default function FrontDeskKiosk({ currentUser }) {
   const [successMsg, setSuccessMsg] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
   const [recentScans, setRecentScans] = useState([]);
+
+  // The exact URL the camera scan opens — built from the live origin so it works
+  // in any deployment (local, preview, or production) without hard-coding a domain.
+  const scanUrl = useMemo(() => {
+    if (typeof window === 'undefined' || !qrToken || qrToken === 'SFK_INIT') return '';
+    return `${window.location.origin}/member-checkin?token=${qrToken}`;
+  }, [qrToken]);
 
   const reasons = [
     'Forgot smartphone at home',
@@ -146,16 +153,34 @@ export default function FrontDeskKiosk({ currentUser }) {
             </span>
             <h3 className="text-lg font-bold text-white mt-2">Scan to Check-In</h3>
             <p className="text-xs text-slate-400 max-w-xs mx-auto">
-              Members scan this code with their Samrat Mobile App. Token rotates every 15s to prevent screenshot sharing.
+              Members point their phone camera at this code and check in on the page it opens. Token rotates every 15s to prevent screenshot sharing.
             </p>
           </div>
 
           <div className="my-6 p-4 rounded-3xl bg-white shadow-2xl border-4 border-amber-400/80">
-            <QrCode className="w-48 h-48 text-slate-950" />
+            {scanUrl ? (
+              <QRCodeSVG
+                value={scanUrl}
+                size={208}
+                level="M"
+                marginSize={2}
+                bgColor="#ffffff"
+                fgColor="#0f172a"
+                title="Scan to check in"
+              />
+            ) : (
+              <div className="h-[208px] w-[208px] animate-pulse rounded bg-slate-200" />
+            )}
             <div className="mt-2 text-center text-xs font-mono font-bold text-slate-900">
               {qrToken}
             </div>
           </div>
+
+          {scanUrl && (
+            <p className="break-all rounded-lg border border-slate-800 bg-slate-950/60 px-3 py-2 text-center text-[10px] font-mono text-amber-400/90">
+              {scanUrl}
+            </p>
+          )}
 
           <div className="w-full space-y-2">
             <div className="flex justify-between items-center text-xs text-slate-400 px-4">

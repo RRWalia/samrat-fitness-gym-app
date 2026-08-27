@@ -13,6 +13,7 @@ const { seedDatabase } = require('./src/config/seed');
 const { validateAuthConfiguration, authenticateToken } = require('./src/middleware/auth.middleware');
 const authRoutes = require('./src/routes/auth');
 const apiRoutes = require('./src/routes/api');
+const publicRoutes = require('./src/routes/public');
 
 validateAuthConfiguration();
 initDatabase();
@@ -133,6 +134,10 @@ app.get('/terms-of-service', (req, res) => {
 <p>These terms may be updated; continued use after a change means acceptance.</p>`));
 });
 app.use('/api/auth', authRoutes);
+
+// Public, unauthenticated member-facing endpoints (e.g. QR scan check-in).
+// Mounted BEFORE the global authenticateToken guard so they stay open.
+app.use('/api/public', publicRoutes);
 
 // Every remaining API route requires a live, non-revoked JWT session.
 app.use('/api', authenticateToken, apiRoutes);
